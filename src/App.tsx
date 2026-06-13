@@ -86,6 +86,170 @@ export default function App() {
   const [sidebarTab, setSidebarTab] = useState<'channels' | 'import' | 'proxy' | 'shortcuts'>('channels');
   const lastActivityRef = useRef<number>(Date.now());
 
+  const [tvMode, setTvMode] = useState<boolean>(() => {
+    const saved = localStorage.getItem('iptv_tv_mode');
+    if (saved) return saved === 'true';
+    const ua = navigator.userAgent.toLowerCase();
+    return (
+      ua.includes('tizen') || 
+      ua.includes('smart-tv') || 
+      ua.includes('webos') || 
+      ua.includes('viera') || 
+      ua.includes('opera tv') || 
+      ua.includes('smarttv') || 
+      ua.includes('hbbtv') ||
+      ua.includes('playstation') ||
+      ua.includes('xbox')
+    );
+  });
+
+  useEffect(() => {
+    localStorage.setItem('iptv_tv_mode', tvMode ? 'true' : 'false');
+  }, [tvMode]);
+
+  // Automatic Fullscreen on First User Action (Mouse click, keydown, touch) for Smart TVs PWA
+  useEffect(() => {
+    const triggerFullscreen = () => {
+      const doc = document.documentElement;
+      if (doc.requestFullscreen && !document.fullscreenElement) {
+        doc.requestFullscreen().catch(() => {});
+      }
+      // Clean up after first interaction
+      window.removeEventListener('click', triggerFullscreen);
+      window.removeEventListener('keydown', triggerFullscreen);
+    };
+
+    window.addEventListener('click', triggerFullscreen);
+    window.addEventListener('keydown', triggerFullscreen);
+    return () => {
+      window.removeEventListener('click', triggerFullscreen);
+      window.removeEventListener('keydown', triggerFullscreen);
+    };
+  }, []);
+
+  // Spatial Navigation (Focus engine) for Smart TV Remote
+  useEffect(() => {
+    if (!tvMode) return;
+
+    const handleSpatialNav = (e: KeyboardEvent) => {
+      const activeEl = document.activeElement as HTMLElement | null;
+      
+      // If user typing inside input/textarea fields, ignore Spatial Navigation
+      if (activeEl && (activeEl.tagName === 'INPUT' || activeEl.tagName === 'TEXTAREA')) {
+        if (e.key === 'Escape' || e.key === 'Backspace') {
+          activeEl.blur();
+          document.getElementById('main-video-player-container')?.focus();
+        }
+        return;
+      }
+
+      // Handle custom TV back button actions
+      if (e.key === 'Backspace' || e.key === 'Escape') {
+        e.preventDefault();
+        if (settings.showOledScreensaver) {
+          setSettings(prev => ({ ...prev, showOledScreensaver: false }));
+        } else if (sidebarTab !== 'channels') {
+          setSidebarTab('channels');
+        } else if (isSidebarOpen) {
+          setIsSidebarOpen(false);
+          document.getElementById('main-video-player-container')?.focus();
+        } else {
+          setIsSidebarOpen(true);
+        }
+        return;
+      }
+
+      const keys = ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'];
+      if (!keys.includes(e.key)) return;
+
+      e.preventDefault();
+
+      // Find all navigable elements
+      const selector = 'button:not([disabled]), a:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
+      let focusables = Array.from(document.querySelectorAll(selector)) as HTMLElement[];
+
+      // Filter to only visible elements
+      focusables = focusables.filter(el => {
+        const rect = el.getBoundingClientRect();
+        return rect.width > 0 && rect.height > 0 && window.getComputedStyle(el).display !== 'none';
+      });
+
+      if (focusables.length === 0) return;
+
+      // If no valid active element, focus the first one
+      if (!activeEl || !focusables.includes(activeEl)) {
+        focusables[0].focus();
+        return;
+      }
+
+      const currentRect = activeEl.getBoundingClientRect();
+      const currentCenter = {
+        x: currentRect.left + currentRect.width / 2,
+        y: currentRect.top + currentRect.height / 2
+      };
+
+      let bestCandidate: HTMLElement | null = null;
+      let minScore = Infinity;
+      const kOrthogonalPenalty = 4; // Prioritizes standard inline rows/columns
+
+      focusables.forEach(candidate => {
+        if (candidate === activeEl) return;
+
+        const candRect = candidate.getBoundingClientRect();
+        const candCenter = {
+          x: candRect.left + candRect.width / 2,
+          y: candRect.top + candRect.height / 2
+        };
+
+        const dx = candCenter.x - currentCenter.x;
+        const dy = candCenter.y - currentCenter.y;
+
+        let isMatch = false;
+        let score = Infinity;
+
+        switch (e.key) {
+          case 'ArrowUp':
+            if (candCenter.y < currentCenter.y && Math.abs(dy) > Math.abs(dx) * 0.5) {
+              isMatch = true;
+              score = Math.abs(dy) + kOrthogonalPenalty * Math.abs(dx);
+            }
+            break;
+          case 'ArrowDown':
+            if (candCenter.y > currentCenter.y && Math.abs(dy) > Math.abs(dx) * 0.5) {
+              isMatch = true;
+              score = Math.abs(dy) + kOrthogonalPenalty * Math.abs(dx);
+            }
+            break;
+          case 'ArrowLeft':
+            if (candCenter.x < currentCenter.x && Math.abs(dx) > Math.abs(dy) * 0.5) {
+              isMatch = true;
+              score = Math.abs(dx) + kOrthogonalPenalty * Math.abs(dy);
+            }
+            break;
+          case 'ArrowRight':
+            if (candCenter.x > currentCenter.x && Math.abs(dx) > Math.abs(dy) * 0.5) {
+              isMatch = true;
+              score = Math.abs(dx) + kOrthogonalPenalty * Math.abs(dy);
+            }
+            break;
+        }
+
+        if (isMatch && score < minScore) {
+          minScore = score;
+          bestCandidate = candidate;
+        }
+      });
+
+      if (bestCandidate) {
+        (bestCandidate as HTMLElement).focus();
+        (bestCandidate as HTMLElement).scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      }
+    };
+
+    window.addEventListener('keydown', handleSpatialNav);
+    return () => window.removeEventListener('keydown', handleSpatialNav);
+  }, [tvMode, isSidebarOpen, sidebarTab, settings.showOledScreensaver]);
+
   // Save favorites to storage
   useEffect(() => {
     localStorage.setItem('iptv_favorites', JSON.stringify(favorites));
@@ -491,7 +655,17 @@ export default function App() {
                 <span className="text-slate-400">{currentLocalTime()}</span>
               </div>
               
-              <div className="flex gap-1.5">
+              <div className="flex flex-wrap gap-1.5 justify-end">
+                <button
+                  onMouseEnter={(e) => e.currentTarget.focus()}
+                  onClick={() => setTvMode(prev => !prev)}
+                  className={`flex items-center gap-1 px-2 py-1 rounded text-[10px] border transition-all cursor-pointer ${tvMode ? 'bg-amber-600 font-bold text-white border-amber-500 shadow shadow-amber-500/20' : 'bg-white/5 border-white/5 text-slate-400 hover:text-white hover:bg-white/10'}`}
+                  title="تغییر کنترل تلویزیون (Focus Layout)"
+                >
+                  <Tv className={`w-3 h-3 ${tvMode ? 'text-white animate-pulse' : 'text-slate-400'}`} />
+                  <span>{tvMode ? 'ریموت: فعال' : 'ریموت: غیرفعال'}</span>
+                </button>
+
                 <button
                   onMouseEnter={(e) => e.currentTarget.focus()}
                   onClick={() => {
@@ -546,6 +720,13 @@ export default function App() {
 
       {/* Global CSS adjustments */}
       <style>{`
+        /* Hide mouse cursor when TV/Remote focus mode is locked to simulate real YouTube TV native player */
+        ${tvMode ? `
+          * {
+            cursor: none !important;
+          }
+        ` : ''}
+
         /* Fine tune scrollbar layouts for better remote navigation */
         .scrollbar-thin::-webkit-scrollbar {
           width: 4px;
