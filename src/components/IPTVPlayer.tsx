@@ -145,23 +145,19 @@ export default function IPTVPlayer({
     const video = videoRef.current;
     
     let streamUrl = channel.url;
-    
-    if (proxySettings && proxySettings.enabled) {
+    const isTelewebionOrDomestic = 
+      channel.url.toLowerCase().includes("telewebion") ||
+      channel.url.toLowerCase().includes("shasans") ||
+      channel.url.toLowerCase().includes("irib") ||
+      channel.url.toLowerCase().includes("sepehr") ||
+      channel.url.toLowerCase().includes("live.ir") ||
+      channel.url.toLowerCase().includes("hls.ir") ||
+      channel.url.toLowerCase().includes("arvan") ||
+      channel.url.toLowerCase().includes("sedaoseema");
+
+    if ((proxySettings && proxySettings.enabled) || isTelewebionOrDomestic) {
       const qParams = new URLSearchParams();
       qParams.set("url", channel.url);
-      
-      const isTelewebionOrDomestic = 
-        channel.url.toLowerCase().includes("telewebion") ||
-        channel.url.toLowerCase().includes("shasans") ||
-        channel.url.toLowerCase().includes("irib") ||
-        channel.url.toLowerCase().includes("sepehr") ||
-        channel.url.toLowerCase().includes("live.ir") ||
-        channel.url.toLowerCase().includes("hls.ir") ||
-        channel.url.toLowerCase().includes("arvan") ||
-        channel.url.toLowerCase().includes("sedaoseema") ||
-        channel.url.toLowerCase().includes(".ir") ||
-        channel.url.toLowerCase().includes("telewebion.com");
-
       if (proxySettings.sessionId) qParams.set("sessionId", proxySettings.sessionId);
       if (proxySettings.cookie) qParams.set("cookie", proxySettings.cookie);
       if (proxySettings.referer) {
@@ -172,61 +168,18 @@ export default function IPTVPlayer({
       if (proxySettings.userAgent) qParams.set("userAgent", proxySettings.userAgent);
       if (proxySettings.token) qParams.set("token", proxySettings.token);
       if (proxySettings.tokenParam) qParams.set("tokenParam", proxySettings.tokenParam);
-      
-      if (proxySettings.proxySegments || isTelewebionOrDomestic) {
-        qParams.set("proxySegments", "true");
-      }
       streamUrl = `/api/proxy?${qParams.toString()}`;
     }
 
-    const isTelewebion = channel.url.toLowerCase().includes("telewebion") || channel.url.toLowerCase().includes("telewebion.ir") || channel.url.toLowerCase().includes("telewebion.com");
-    const isDomestic = channel.url.toLowerCase().includes(".ir") || channel.url.toLowerCase().includes("shasans") || channel.url.toLowerCase().includes("irib") || channel.url.toLowerCase().includes("sepehr") || channel.url.toLowerCase().includes("live.ir") || channel.url.toLowerCase().includes("hls.ir") || channel.url.toLowerCase().includes("arvan") || channel.url.toLowerCase().includes("sedaoseema");
-
-    const hasNativeSupport = !!(video.canPlayType('application/vnd.apple.mpegurl') || video.canPlayType('vnd.apple.mpegURL'));
-    
-    // Force native HLS player for domestic streams on Smart TVs (Tizen/WebOS) and Safari to bypass CORS
-    const forceNative = (isTelewebion || isDomestic) && hasNativeSupport;
-
-    const handleNativeLoad = () => {
-      setIsPlaying(true);
-      video.play().catch(() => {
-        setIsPlaying(false);
-      });
-      triggerActivity();
-    };
-
-    const handleNativeError = () => {
-      // Fallback to Hls.js if native fails
-      if (Hls.isSupported()) {
-        console.warn("Native player error, falling back to Hls.js.");
-        video.removeEventListener('loadedmetadata', handleNativeLoad);
-        video.removeEventListener('error', handleNativeError);
-        loadWithHlsJS();
-      } else {
-        setErrorMsg('خطای مدیا. اتصال اینترنت یا آدرس شبکه را بررسی نمایید.');
-        setIsPlaying(false);
-      }
-    };
-
-    function loadWithHlsJS() {
+    if (Hls.isSupported()) {
       const hls = new Hls({
-        maxMaxBufferLength: 30, // Increased buffer size for robust Smart TV networking
+        maxMaxBufferLength: 15,
         enableWorker: true,
-        lowLatencyMode: false, // Standard buffer cycle is more stable for domestic CDNs
-        maxBufferLength: 15,
-        maxBufferSize: 20 * 1024 * 1024,
-        xhrSetup: (xhr, url) => {
-          // Bypassing credentials constraints which can trigger CORS rejections on TV
-          if (isTelewebion || isDomestic) {
-            xhr.withCredentials = false;
-          }
-        }
+        lowLatencyMode: true,
       });
       hlsRef.current = hls;
 
-      let activeLoadedUrl = streamUrl;
-
-      hls.loadSource(activeLoadedUrl);
+      hls.loadSource(streamUrl);
       hls.attachMedia(video);
 
       hls.on(Hls.Events.MANIFEST_PARSED, (_, data) => {
@@ -242,35 +195,10 @@ export default function IPTVPlayer({
           name: lvl.height ? `${lvl.height}p` : `Level ${index + 1}`
         }));
         setLevels(availableLevels);
-
-        // Select the lowest quality stream level by default as requested
-        let lowestIndex = 0;
-        if (hls.levels && hls.levels.length > 0) {
-          let minVal = Infinity;
-          hls.levels.forEach((lvl, idx) => {
-            const val = lvl.height || lvl.bitrate || idx;
-            if (val < minVal) {
-              minVal = val;
-              lowestIndex = idx;
-            }
-          });
-          hls.currentLevel = lowestIndex;
-          setCurrentLevel(lowestIndex);
-        }
       });
 
       hls.on(Hls.Events.ERROR, (_, data) => {
         if (data.fatal) {
-          // Domestic and Telewebion dynamic fallback: Bypassing TV HTTPS cert handshake blocks by falling back to HTTP
-          if (data.type === Hls.ErrorTypes.NETWORK_ERROR && activeLoadedUrl.startsWith('https://') && (isTelewebion || isDomestic)) {
-            console.warn("SSL certificate or handshake error on domestic CDN. Attempting HTTP protocol fallback.");
-            const fallbackHttpUrl = activeLoadedUrl.replace('https://', 'http://');
-            activeLoadedUrl = fallbackHttpUrl;
-            hls.loadSource(fallbackHttpUrl);
-            hls.startLoad();
-            return;
-          }
-
           switch (data.type) {
             case Hls.ErrorTypes.NETWORK_ERROR:
               setErrorMsg('خطای شبکه در دریافت استریم. اتصال را بررسی کنید.');
@@ -287,32 +215,31 @@ export default function IPTVPlayer({
           }
         }
       });
-    }
-
-    if (forceNative) {
-      console.log("Loading domestic stream with native video engine to bypass CORS.");
+    } else if (video.canPlayType('application/vnd.apple.mpegurl') || video.canPlayType('vnd.apple.mpegURL')) {
+      // Native Safari/iOS/Tizen support
       video.src = streamUrl;
-      video.addEventListener('loadedmetadata', handleNativeLoad);
-      video.addEventListener('error', handleNativeError);
-    } else if (Hls.isSupported()) {
-      loadWithHlsJS();
-    } else if (hasNativeSupport) {
-      video.src = streamUrl;
-      video.addEventListener('loadedmetadata', handleNativeLoad);
-      video.addEventListener('error', handleNativeError);
+      video.addEventListener('loadedmetadata', () => {
+        setIsPlaying(true);
+        video.play().catch(() => {
+          setIsPlaying(false);
+        });
+        triggerActivity();
+      });
+      video.addEventListener('error', () => {
+        setErrorMsg('خطای مدیا. اتصال اینترنت یا آدرس شبکه را بررسی نمایید.');
+        setIsPlaying(false);
+      });
     } else {
       setErrorMsg('مرورگر شما از پخش Live HLS استریم پشتیبانی نمی‌کند.');
     }
 
     return () => {
-      video.removeEventListener('loadedmetadata', handleNativeLoad);
-      video.removeEventListener('error', handleNativeError);
       if (hlsRef.current) {
         hlsRef.current.destroy();
         hlsRef.current = null;
       }
     };
-  }, [channel, proxySettings.enabled, proxySettings.cookie, proxySettings.referer, proxySettings.userAgent, proxySettings.token, proxySettings.tokenParam, proxySettings.proxySegments]);
+  }, [channel, proxySettings.enabled, proxySettings.cookie, proxySettings.referer, proxySettings.userAgent, proxySettings.token, proxySettings.tokenParam]);
 
   // Sleep timer interval tracking
   useEffect(() => {

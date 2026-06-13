@@ -77,7 +77,6 @@ export default function App() {
       tokenRenewInterval: 45,
       tokenRenewEnabled: false,
       tokenRenewKey: '',
-      proxySegments: false,
     };
   });
 
@@ -85,170 +84,6 @@ export default function App() {
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [sidebarTab, setSidebarTab] = useState<'channels' | 'import' | 'proxy' | 'shortcuts'>('channels');
   const lastActivityRef = useRef<number>(Date.now());
-
-  const [tvMode, setTvMode] = useState<boolean>(() => {
-    const saved = localStorage.getItem('iptv_tv_mode');
-    if (saved) return saved === 'true';
-    const ua = navigator.userAgent.toLowerCase();
-    return (
-      ua.includes('tizen') || 
-      ua.includes('smart-tv') || 
-      ua.includes('webos') || 
-      ua.includes('viera') || 
-      ua.includes('opera tv') || 
-      ua.includes('smarttv') || 
-      ua.includes('hbbtv') ||
-      ua.includes('playstation') ||
-      ua.includes('xbox')
-    );
-  });
-
-  useEffect(() => {
-    localStorage.setItem('iptv_tv_mode', tvMode ? 'true' : 'false');
-  }, [tvMode]);
-
-  // Automatic Fullscreen on First User Action (Mouse click, keydown, touch) for Smart TVs PWA
-  useEffect(() => {
-    const triggerFullscreen = () => {
-      const doc = document.documentElement;
-      if (doc.requestFullscreen && !document.fullscreenElement) {
-        doc.requestFullscreen().catch(() => {});
-      }
-      // Clean up after first interaction
-      window.removeEventListener('click', triggerFullscreen);
-      window.removeEventListener('keydown', triggerFullscreen);
-    };
-
-    window.addEventListener('click', triggerFullscreen);
-    window.addEventListener('keydown', triggerFullscreen);
-    return () => {
-      window.removeEventListener('click', triggerFullscreen);
-      window.removeEventListener('keydown', triggerFullscreen);
-    };
-  }, []);
-
-  // Spatial Navigation (Focus engine) for Smart TV Remote
-  useEffect(() => {
-    if (!tvMode) return;
-
-    const handleSpatialNav = (e: KeyboardEvent) => {
-      const activeEl = document.activeElement as HTMLElement | null;
-      
-      // If user typing inside input/textarea fields, ignore Spatial Navigation
-      if (activeEl && (activeEl.tagName === 'INPUT' || activeEl.tagName === 'TEXTAREA')) {
-        if (e.key === 'Escape' || e.key === 'Backspace') {
-          activeEl.blur();
-          document.getElementById('main-video-player-container')?.focus();
-        }
-        return;
-      }
-
-      // Handle custom TV back button actions
-      if (e.key === 'Backspace' || e.key === 'Escape') {
-        e.preventDefault();
-        if (settings.showOledScreensaver) {
-          setSettings(prev => ({ ...prev, showOledScreensaver: false }));
-        } else if (sidebarTab !== 'channels') {
-          setSidebarTab('channels');
-        } else if (isSidebarOpen) {
-          setIsSidebarOpen(false);
-          document.getElementById('main-video-player-container')?.focus();
-        } else {
-          setIsSidebarOpen(true);
-        }
-        return;
-      }
-
-      const keys = ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'];
-      if (!keys.includes(e.key)) return;
-
-      e.preventDefault();
-
-      // Find all navigable elements
-      const selector = 'button:not([disabled]), a:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
-      let focusables = Array.from(document.querySelectorAll(selector)) as HTMLElement[];
-
-      // Filter to only visible elements
-      focusables = focusables.filter(el => {
-        const rect = el.getBoundingClientRect();
-        return rect.width > 0 && rect.height > 0 && window.getComputedStyle(el).display !== 'none';
-      });
-
-      if (focusables.length === 0) return;
-
-      // If no valid active element, focus the first one
-      if (!activeEl || !focusables.includes(activeEl)) {
-        focusables[0].focus();
-        return;
-      }
-
-      const currentRect = activeEl.getBoundingClientRect();
-      const currentCenter = {
-        x: currentRect.left + currentRect.width / 2,
-        y: currentRect.top + currentRect.height / 2
-      };
-
-      let bestCandidate: HTMLElement | null = null;
-      let minScore = Infinity;
-      const kOrthogonalPenalty = 4; // Prioritizes standard inline rows/columns
-
-      focusables.forEach(candidate => {
-        if (candidate === activeEl) return;
-
-        const candRect = candidate.getBoundingClientRect();
-        const candCenter = {
-          x: candRect.left + candRect.width / 2,
-          y: candRect.top + candRect.height / 2
-        };
-
-        const dx = candCenter.x - currentCenter.x;
-        const dy = candCenter.y - currentCenter.y;
-
-        let isMatch = false;
-        let score = Infinity;
-
-        switch (e.key) {
-          case 'ArrowUp':
-            if (candCenter.y < currentCenter.y && Math.abs(dy) > Math.abs(dx) * 0.5) {
-              isMatch = true;
-              score = Math.abs(dy) + kOrthogonalPenalty * Math.abs(dx);
-            }
-            break;
-          case 'ArrowDown':
-            if (candCenter.y > currentCenter.y && Math.abs(dy) > Math.abs(dx) * 0.5) {
-              isMatch = true;
-              score = Math.abs(dy) + kOrthogonalPenalty * Math.abs(dx);
-            }
-            break;
-          case 'ArrowLeft':
-            if (candCenter.x < currentCenter.x && Math.abs(dx) > Math.abs(dy) * 0.5) {
-              isMatch = true;
-              score = Math.abs(dx) + kOrthogonalPenalty * Math.abs(dy);
-            }
-            break;
-          case 'ArrowRight':
-            if (candCenter.x > currentCenter.x && Math.abs(dx) > Math.abs(dy) * 0.5) {
-              isMatch = true;
-              score = Math.abs(dx) + kOrthogonalPenalty * Math.abs(dy);
-            }
-            break;
-        }
-
-        if (isMatch && score < minScore) {
-          minScore = score;
-          bestCandidate = candidate;
-        }
-      });
-
-      if (bestCandidate) {
-        (bestCandidate as HTMLElement).focus();
-        (bestCandidate as HTMLElement).scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-      }
-    };
-
-    window.addEventListener('keydown', handleSpatialNav);
-    return () => window.removeEventListener('keydown', handleSpatialNav);
-  }, [tvMode, isSidebarOpen, sidebarTab, settings.showOledScreensaver]);
 
   // Save favorites to storage
   useEffect(() => {
@@ -519,32 +354,37 @@ export default function App() {
               </button>
             </div>
 
-            {/* Sidebar Tabs selections - Only visible in settings/advanced mode */}
-            {sidebarTab !== 'channels' && (
-              <div className="flex border-b border-white/5 bg-slate-900/20 py-1.5 px-2 gap-1 dir-rtl">
-                <button
-                  onClick={() => setSidebarTab('import')}
-                  className={`flex-1 py-1.5 px-2 text-[10px] font-bold rounded-md transition-all flex flex-col items-center gap-1 cursor-pointer ${sidebarTab === 'import' ? 'bg-blue-600 text-white shadow font-extrabold' : 'text-slate-400 hover:text-white hover:bg-white/5'}`}
-                >
-                  <BookOpen className="w-3.5 h-3.5" />
-                  <span>بارگذاری M3U</span>
-                </button>
-                <button
-                  onClick={() => setSidebarTab('proxy')}
-                  className={`flex-1 py-1.5 px-2 text-[10px] font-bold rounded-md transition-all flex flex-col items-center gap-1 cursor-pointer ${sidebarTab === 'proxy' ? 'bg-blue-600 text-white shadow font-extrabold' : 'text-slate-400 hover:text-white hover:bg-white/5'}`}
-                >
-                  <Settings className="w-3.5 h-3.5" />
-                  <span>تنظیمات پروکسی</span>
-                </button>
-                <button
-                  onClick={() => setSidebarTab('shortcuts')}
-                  className={`flex-1 py-1.5 px-2 text-[10px] font-bold rounded-md transition-all flex flex-col items-center gap-1 cursor-pointer ${sidebarTab === 'shortcuts' ? 'bg-blue-600 text-white shadow font-extrabold' : 'text-slate-400 hover:text-white hover:bg-white/5'}`}
-                >
-                  <HelpCircle className="w-3.5 h-3.5" />
-                  <span>راهنمای دکمه‌ها</span>
-                </button>
-              </div>
-            )}
+            {/* Sidebar Tabs selections */}
+            <div className="flex border-b border-white/5 bg-slate-900/20 py-1.5 px-2 gap-1 dir-rtl">
+              <button
+                onClick={() => setSidebarTab('channels')}
+                className={`flex-1 py-1 px-2.5 text-xs font-bold rounded-md transition-all flex flex-col items-center gap-1 cursor-pointer ${sidebarTab === 'channels' ? 'bg-blue-600 text-white shadow' : 'text-slate-400 hover:text-white hover:bg-white/5'}`}
+              >
+                <Tv className="w-4 h-4" />
+                <span>برنامه‌ها</span>
+              </button>
+              <button
+                onClick={() => setSidebarTab('import')}
+                className={`flex-1 py-1 px-2.5 text-xs font-bold rounded-md transition-all flex flex-col items-center gap-1 cursor-pointer ${sidebarTab === 'import' ? 'bg-blue-600 text-white shadow' : 'text-slate-400 hover:text-white hover:bg-white/5'}`}
+              >
+                <BookOpen className="w-4 h-4" />
+                <span>بارگذاری</span>
+              </button>
+              <button
+                onClick={() => setSidebarTab('proxy')}
+                className={`flex-1 py-1 px-2.5 text-xs font-bold rounded-md transition-all flex flex-col items-center gap-1 cursor-pointer ${sidebarTab === 'proxy' ? 'bg-blue-600 text-white shadow' : 'text-slate-400 hover:text-white hover:bg-white/5'}`}
+              >
+                <Settings className="w-4 h-4" />
+                <span>پروکسی</span>
+              </button>
+              <button
+                onClick={() => setSidebarTab('shortcuts')}
+                className={`flex-1 py-1 px-2.5 text-xs font-bold rounded-md transition-all flex flex-col items-center gap-1 cursor-pointer ${sidebarTab === 'shortcuts' ? 'bg-blue-600 text-white shadow' : 'text-slate-400 hover:text-white hover:bg-white/5'}`}
+              >
+                <HelpCircle className="w-4 h-4" />
+                <span>راهنما</span>
+              </button>
+            </div>
 
             {/* TAB PANELS CONTAINER */}
             <div className="flex-1 overflow-y-auto p-4 flex flex-col scrollbar-thin">
@@ -649,49 +489,19 @@ export default function App() {
             </div>
 
             {/* Sidebar bottom persistent stats / clock block */}
-            <div className="p-3 border-t border-white/5 bg-slate-950 flex flex-wrap items-center justify-between text-slate-500 text-[10px] dir-rtl font-semibold gap-2">
+            <div className="p-3 border-t border-white/5 bg-slate-950 flex items-center justify-between text-slate-500 text-[10px] dir-rtl font-semibold">
               <div className="flex items-center gap-1.5">
                 <span className="w-1.5 h-1.5 rounded-full bg-blue-500 animate-pulse" />
                 <span className="text-slate-400">{currentLocalTime()}</span>
               </div>
-              
-              <div className="flex flex-wrap gap-1.5 justify-end">
-                <button
-                  onMouseEnter={(e) => e.currentTarget.focus()}
-                  onClick={() => setTvMode(prev => !prev)}
-                  className={`flex items-center gap-1 px-2 py-1 rounded text-[10px] border transition-all cursor-pointer ${tvMode ? 'bg-amber-600 font-bold text-white border-amber-500 shadow shadow-amber-500/20' : 'bg-white/5 border-white/5 text-slate-400 hover:text-white hover:bg-white/10'}`}
-                  title="تغییر کنترل تلویزیون (Focus Layout)"
-                >
-                  <Tv className={`w-3 h-3 ${tvMode ? 'text-white animate-pulse' : 'text-slate-400'}`} />
-                  <span>{tvMode ? 'ریموت: فعال' : 'ریموت: غیرفعال'}</span>
-                </button>
-
-                <button
-                  onMouseEnter={(e) => e.currentTarget.focus()}
-                  onClick={() => {
-                    setSidebarTab(prev => {
-                      if (prev === 'channels') {
-                        return 'import'; // Go to playlist page on settings mode
-                      } else {
-                        return 'channels'; // Go back to channel list under normal mode
-                      }
-                    });
-                  }}
-                  className={`flex items-center gap-1 px-2 py-1 rounded text-slate-300 border border-white/5 transition-all cursor-pointer ${sidebarTab !== 'channels' ? 'bg-blue-600 text-white border-blue-500 shadow' : 'bg-white/5 hover:bg-white/10 hover:text-white'}`}
-                >
-                  <Settings className="w-3 h-3 text-blue-400" />
-                  <span>{sidebarTab === 'channels' ? 'تنظیمات' : 'بازگشت به کانال‌ها'}</span>
-                </button>
-
-                <button
-                  onMouseEnter={(e) => e.currentTarget.focus()}
-                  onClick={() => setSettings(prev => ({ ...prev, showOledScreensaver: true }))}
-                  className="flex items-center gap-1 text-slate-400 hover:text-white cursor-pointer bg-white/5 hover:bg-white/10 px-2 py-1 rounded border border-white/5 transition-all"
-                >
-                  <Moon className="w-3 h-3 text-blue-400" />
-                  <span>محافظ صفحه</span>
-                </button>
-              </div>
+              <span className="text-slate-500">{currentLocalDate()}</span>
+              <button
+                onClick={() => setSettings(prev => ({ ...prev, showOledScreensaver: true }))}
+                className="flex items-center gap-1 text-slate-400 hover:text-white cursor-pointer bg-white/5 px-2 py-1 rounded"
+              >
+                <Moon className="w-3 h-3 text-blue-400" />
+                <span>محافظ صفحه</span>
+              </button>
             </div>
           </motion.div>
         )}
@@ -720,13 +530,6 @@ export default function App() {
 
       {/* Global CSS adjustments */}
       <style>{`
-        /* Hide mouse cursor when TV/Remote focus mode is locked to simulate real YouTube TV native player */
-        ${tvMode ? `
-          * {
-            cursor: none !important;
-          }
-        ` : ''}
-
         /* Fine tune scrollbar layouts for better remote navigation */
         .scrollbar-thin::-webkit-scrollbar {
           width: 4px;

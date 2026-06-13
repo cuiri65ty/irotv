@@ -23,7 +23,6 @@ export default function ProxySettingsPanel({
   const [tokenRenewUrl, setTokenRenewUrl] = useState(settings.tokenRenewUrl);
   const [tokenRenewInterval, setTokenRenewInterval] = useState(settings.tokenRenewInterval || 45);
   const [tokenRenewKey, setTokenRenewKey] = useState(settings.tokenRenewKey || '');
-  const [proxySegments, setProxySegments] = useState(settings.proxySegments || false);
   
   const [showSavedMsg, setShowSavedMsg] = useState(false);
 
@@ -41,7 +40,6 @@ export default function ProxySettingsPanel({
       tokenRenewUrl: tokenRenewUrl.trim(),
       tokenRenewInterval: Number(tokenRenewInterval) || 45,
       tokenRenewKey: tokenRenewKey.trim(),
-      proxySegments,
     });
 
     setShowSavedMsg(true);
@@ -73,10 +71,6 @@ export default function ProxySettingsPanel({
         </button>
       </div>
 
-      <div className="bg-blue-600/15 border border-blue-500/30 text-blue-300 p-2.5 rounded-lg mb-4 text-[10px] leading-relaxed">
-        <strong>راهنمای کاربران داخل ایران:</strong> در صورتی که با اینترنت ایران هستید و فیلترباکس/VPN غیرفعال است، پروکسی را <strong>خاموش</strong> بگذارید تا شبکه‌های تلوبیون و داخلی با آی‌پی ایران و سرعت بالا مستقیماً پخش شوند. اگر فیلترشکن شما روشن است، جهت رفع کدهای امنیتی، پروکسی را <strong>فعال</strong> نمایید.
-      </div>
-
       <p className="text-[11px] text-slate-400 mb-4 leading-relaxed">
         برخی شبکه‌ها برای پخش نیاز به نشست معتبر، کوکی اختصاصی یا توکن متغیر زمانی دارند. با فعال‌سازی پروکسی، این متغیرها توسط سرور میانی شبیه‌سازی و تزریق می‌شوند.
       </p>
@@ -105,25 +99,6 @@ export default function ProxySettingsPanel({
             <div className="w-9 h-5 bg-slate-800 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:-translate-x-full after:content-[''] after:absolute after:top-[2px] after:right-[2px] after:bg-slate-300 after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-blue-600 peer-checked:after:bg-white peer-checked:after:border-white"></div>
           </label>
         </div>
-
-        {/* Toggle proxy segments */}
-        {enabled && (
-          <div className="flex items-center justify-between p-2.5 bg-slate-950/40 rounded-lg border border-blue-500/20 border-dashed animate-fade-in">
-            <div>
-              <span className="text-xs font-bold text-slate-200 block">پروکسی محتوا و قطعات ویدیو (.ts)</span>
-              <span className="text-[9px] text-slate-400 mt-0.5 block">کمک به پخش روان زنده در شرایط محدودیت شدید آی‌پی خارج</span>
-            </div>
-            <label className="relative inline-flex items-center cursor-pointer select-none">
-              <input
-                type="checkbox"
-                checked={proxySegments}
-                onChange={(e) => setProxySegments(e.target.checked)}
-                className="sr-only peer"
-              />
-              <div className="w-9 h-5 bg-slate-800 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:-translate-x-full after:content-[''] after:absolute after:top-[2px] after:right-[2px] after:bg-slate-300 after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-blue-600 peer-checked:after:bg-white peer-checked:after:border-white"></div>
-            </label>
-          </div>
-        )}
 
         {/* Header fields (CORS Bypasses) */}
         {enabled && (
