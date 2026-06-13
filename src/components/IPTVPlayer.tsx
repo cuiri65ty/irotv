@@ -155,7 +155,7 @@ export default function IPTVPlayer({
       channel.url.toLowerCase().includes("arvan") ||
       channel.url.toLowerCase().includes("sedaoseema");
 
-    if ((proxySettings && proxySettings.enabled) || isTelewebionOrDomestic) {
+    if (proxySettings && proxySettings.enabled) {
       const qParams = new URLSearchParams();
       qParams.set("url", channel.url);
       if (proxySettings.sessionId) qParams.set("sessionId", proxySettings.sessionId);
@@ -168,6 +168,7 @@ export default function IPTVPlayer({
       if (proxySettings.userAgent) qParams.set("userAgent", proxySettings.userAgent);
       if (proxySettings.token) qParams.set("token", proxySettings.token);
       if (proxySettings.tokenParam) qParams.set("tokenParam", proxySettings.tokenParam);
+      if (proxySettings.upstreamProxy) qParams.set("upstreamProxy", proxySettings.upstreamProxy);
       streamUrl = `/api/proxy?${qParams.toString()}`;
     }
 
@@ -195,6 +196,21 @@ export default function IPTVPlayer({
           name: lvl.height ? `${lvl.height}p` : `Level ${index + 1}`
         }));
         setLevels(availableLevels);
+
+        // Select the lowest quality stream level by default as requested
+        let lowestIndex = 0;
+        if (hls.levels && hls.levels.length > 0) {
+          let minVal = Infinity;
+          hls.levels.forEach((lvl, idx) => {
+            const val = lvl.height || lvl.bitrate || idx;
+            if (val < minVal) {
+              minVal = val;
+              lowestIndex = idx;
+            }
+          });
+          hls.currentLevel = lowestIndex;
+          setCurrentLevel(lowestIndex);
+        }
       });
 
       hls.on(Hls.Events.ERROR, (_, data) => {

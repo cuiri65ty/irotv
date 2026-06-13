@@ -354,37 +354,32 @@ export default function App() {
               </button>
             </div>
 
-            {/* Sidebar Tabs selections */}
-            <div className="flex border-b border-white/5 bg-slate-900/20 py-1.5 px-2 gap-1 dir-rtl">
-              <button
-                onClick={() => setSidebarTab('channels')}
-                className={`flex-1 py-1 px-2.5 text-xs font-bold rounded-md transition-all flex flex-col items-center gap-1 cursor-pointer ${sidebarTab === 'channels' ? 'bg-blue-600 text-white shadow' : 'text-slate-400 hover:text-white hover:bg-white/5'}`}
-              >
-                <Tv className="w-4 h-4" />
-                <span>برنامه‌ها</span>
-              </button>
-              <button
-                onClick={() => setSidebarTab('import')}
-                className={`flex-1 py-1 px-2.5 text-xs font-bold rounded-md transition-all flex flex-col items-center gap-1 cursor-pointer ${sidebarTab === 'import' ? 'bg-blue-600 text-white shadow' : 'text-slate-400 hover:text-white hover:bg-white/5'}`}
-              >
-                <BookOpen className="w-4 h-4" />
-                <span>بارگذاری</span>
-              </button>
-              <button
-                onClick={() => setSidebarTab('proxy')}
-                className={`flex-1 py-1 px-2.5 text-xs font-bold rounded-md transition-all flex flex-col items-center gap-1 cursor-pointer ${sidebarTab === 'proxy' ? 'bg-blue-600 text-white shadow' : 'text-slate-400 hover:text-white hover:bg-white/5'}`}
-              >
-                <Settings className="w-4 h-4" />
-                <span>پروکسی</span>
-              </button>
-              <button
-                onClick={() => setSidebarTab('shortcuts')}
-                className={`flex-1 py-1 px-2.5 text-xs font-bold rounded-md transition-all flex flex-col items-center gap-1 cursor-pointer ${sidebarTab === 'shortcuts' ? 'bg-blue-600 text-white shadow' : 'text-slate-400 hover:text-white hover:bg-white/5'}`}
-              >
-                <HelpCircle className="w-4 h-4" />
-                <span>راهنما</span>
-              </button>
-            </div>
+            {/* Sidebar Tabs selections - Only visible in settings/advanced mode */}
+            {sidebarTab !== 'channels' && (
+              <div className="flex border-b border-white/5 bg-slate-900/20 py-1.5 px-2 gap-1 dir-rtl">
+                <button
+                  onClick={() => setSidebarTab('import')}
+                  className={`flex-1 py-1.5 px-2 text-[10px] font-bold rounded-md transition-all flex flex-col items-center gap-1 cursor-pointer ${sidebarTab === 'import' ? 'bg-blue-600 text-white shadow font-extrabold' : 'text-slate-400 hover:text-white hover:bg-white/5'}`}
+                >
+                  <BookOpen className="w-3.5 h-3.5" />
+                  <span>بارگذاری M3U</span>
+                </button>
+                <button
+                  onClick={() => setSidebarTab('proxy')}
+                  className={`flex-1 py-1.5 px-2 text-[10px] font-bold rounded-md transition-all flex flex-col items-center gap-1 cursor-pointer ${sidebarTab === 'proxy' ? 'bg-blue-600 text-white shadow font-extrabold' : 'text-slate-400 hover:text-white hover:bg-white/5'}`}
+                >
+                  <Settings className="w-3.5 h-3.5" />
+                  <span>تنظیمات پروکسی</span>
+                </button>
+                <button
+                  onClick={() => setSidebarTab('shortcuts')}
+                  className={`flex-1 py-1.5 px-2 text-[10px] font-bold rounded-md transition-all flex flex-col items-center gap-1 cursor-pointer ${sidebarTab === 'shortcuts' ? 'bg-blue-600 text-white shadow font-extrabold' : 'text-slate-400 hover:text-white hover:bg-white/5'}`}
+                >
+                  <HelpCircle className="w-3.5 h-3.5" />
+                  <span>راهنمای دکمه‌ها</span>
+                </button>
+              </div>
+            )}
 
             {/* TAB PANELS CONTAINER */}
             <div className="flex-1 overflow-y-auto p-4 flex flex-col scrollbar-thin">
@@ -489,19 +484,39 @@ export default function App() {
             </div>
 
             {/* Sidebar bottom persistent stats / clock block */}
-            <div className="p-3 border-t border-white/5 bg-slate-950 flex items-center justify-between text-slate-500 text-[10px] dir-rtl font-semibold">
+            <div className="p-3 border-t border-white/5 bg-slate-950 flex flex-wrap items-center justify-between text-slate-500 text-[10px] dir-rtl font-semibold gap-2">
               <div className="flex items-center gap-1.5">
                 <span className="w-1.5 h-1.5 rounded-full bg-blue-500 animate-pulse" />
                 <span className="text-slate-400">{currentLocalTime()}</span>
               </div>
-              <span className="text-slate-500">{currentLocalDate()}</span>
-              <button
-                onClick={() => setSettings(prev => ({ ...prev, showOledScreensaver: true }))}
-                className="flex items-center gap-1 text-slate-400 hover:text-white cursor-pointer bg-white/5 px-2 py-1 rounded"
-              >
-                <Moon className="w-3 h-3 text-blue-400" />
-                <span>محافظ صفحه</span>
-              </button>
+              
+              <div className="flex gap-1.5">
+                <button
+                  onMouseEnter={(e) => e.currentTarget.focus()}
+                  onClick={() => {
+                    setSidebarTab(prev => {
+                      if (prev === 'channels') {
+                        return 'import'; // Go to playlist page on settings mode
+                      } else {
+                        return 'channels'; // Go back to channel list under normal mode
+                      }
+                    });
+                  }}
+                  className={`flex items-center gap-1 px-2 py-1 rounded text-slate-300 border border-white/5 transition-all cursor-pointer ${sidebarTab !== 'channels' ? 'bg-blue-600 text-white border-blue-500 shadow' : 'bg-white/5 hover:bg-white/10 hover:text-white'}`}
+                >
+                  <Settings className="w-3 h-3 text-blue-400" />
+                  <span>{sidebarTab === 'channels' ? 'تنظیمات' : 'بازگشت به کانال‌ها'}</span>
+                </button>
+
+                <button
+                  onMouseEnter={(e) => e.currentTarget.focus()}
+                  onClick={() => setSettings(prev => ({ ...prev, showOledScreensaver: true }))}
+                  className="flex items-center gap-1 text-slate-400 hover:text-white cursor-pointer bg-white/5 hover:bg-white/10 px-2 py-1 rounded border border-white/5 transition-all"
+                >
+                  <Moon className="w-3 h-3 text-blue-400" />
+                  <span>محافظ صفحه</span>
+                </button>
+              </div>
             </div>
           </motion.div>
         )}
