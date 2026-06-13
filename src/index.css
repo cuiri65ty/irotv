@@ -8,42 +8,33 @@
   --color-brand-violet: #7c3aed;
 }
 
-/* Frosted glass components styling card base */
+/* Frosted glass components styling card base - Optimized for smart TVs with solid/semi-trans background */
 .glass-panel {
-  background: rgba(255, 255, 255, 0.03);
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: #0b0f19; /* Solid deep slate */
+  border: 1px solid rgba(255, 255, 255, 0.06);
 }
 
 .glass-panel-deep {
-  background: rgba(15, 23, 42, 0.6);
-  backdrop-filter: blur(24px);
-  -webkit-backdrop-filter: blur(24px);
-  border: 1px solid rgba(255, 255, 255, 0.05);
+  background: #020617; /* Solid black-slate */
+  border: 1px solid rgba(255, 255, 255, 0.03);
 }
 
 .glass-interactive {
-  background: rgba(255, 255, 255, 0.04);
-  border: 1px solid rgba(255, 255, 255, 0.06);
-  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+  background: #111827; /* Dark gray */
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  transition: background-color 0.12s ease-in-out;
 }
 
 .glass-interactive:hover,
 .glass-interactive:focus {
-  background: rgba(255, 255, 255, 0.12);
-  border-color: rgba(99, 102, 241, 0.4);
-  box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.3);
-  transform: translateY(-2px);
+  background: #1f2937; /* Lighter dark gray */
+  border-color: rgba(59, 130, 246, 0.4);
   outline: none;
 }
 
 .glass-active {
-  background: rgba(255, 255, 255, 0.18) !important;
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-  border: 1px solid rgba(59, 130, 246, 0.5) !important;
-  box-shadow: 0 0 24px rgba(59, 130, 246, 0.35) !important;
+  background: #2563eb !important; /* solid blue, no gradient */
+  border: 1px solid #3b82f6 !important;
 }
 
 /* Custom scrollbars matching the theme */

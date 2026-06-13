@@ -5,12 +5,13 @@ import {
   Tv, Timer, ChevronRight, Settings, RotateCcw, MonitorPlay,
   SkipBack, SkipForward
 } from 'lucide-react';
-import { Channel, PlayerSettings } from '../types';
+import { Channel, PlayerSettings, ProxySettings } from '../types';
 
 interface IPTVPlayerProps {
   channel: Channel | null;
   settings: PlayerSettings;
   setSettings: (updater: (prev: PlayerSettings) => PlayerSettings) => void;
+  proxySettings: ProxySettings;
   onPrevChannel: () => void;
   onNextChannel: () => void;
   onFocusChange?: (id: string) => void;
@@ -20,6 +21,7 @@ export default function IPTVPlayer({
   channel,
   settings,
   setSettings,
+  proxySettings,
   onPrevChannel,
   onNextChannel,
   onFocusChange,
@@ -141,7 +143,33 @@ export default function IPTVPlayer({
     }
 
     const video = videoRef.current;
-    const streamUrl = channel.url;
+    
+    let streamUrl = channel.url;
+    const isTelewebionOrDomestic = 
+      channel.url.toLowerCase().includes("telewebion") ||
+      channel.url.toLowerCase().includes("shasans") ||
+      channel.url.toLowerCase().includes("irib") ||
+      channel.url.toLowerCase().includes("sepehr") ||
+      channel.url.toLowerCase().includes("live.ir") ||
+      channel.url.toLowerCase().includes("hls.ir") ||
+      channel.url.toLowerCase().includes("arvan") ||
+      channel.url.toLowerCase().includes("sedaoseema");
+
+    if ((proxySettings && proxySettings.enabled) || isTelewebionOrDomestic) {
+      const qParams = new URLSearchParams();
+      qParams.set("url", channel.url);
+      if (proxySettings.sessionId) qParams.set("sessionId", proxySettings.sessionId);
+      if (proxySettings.cookie) qParams.set("cookie", proxySettings.cookie);
+      if (proxySettings.referer) {
+        qParams.set("referer", proxySettings.referer);
+      } else if (isTelewebionOrDomestic) {
+        qParams.set("referer", "https://www.telewebion.com/");
+      }
+      if (proxySettings.userAgent) qParams.set("userAgent", proxySettings.userAgent);
+      if (proxySettings.token) qParams.set("token", proxySettings.token);
+      if (proxySettings.tokenParam) qParams.set("tokenParam", proxySettings.tokenParam);
+      streamUrl = `/api/proxy?${qParams.toString()}`;
+    }
 
     if (Hls.isSupported()) {
       const hls = new Hls({
@@ -211,7 +239,7 @@ export default function IPTVPlayer({
         hlsRef.current = null;
       }
     };
-  }, [channel]);
+  }, [channel, proxySettings.enabled, proxySettings.cookie, proxySettings.referer, proxySettings.userAgent, proxySettings.token, proxySettings.tokenParam]);
 
   // Sleep timer interval tracking
   useEffect(() => {
@@ -381,7 +409,7 @@ export default function IPTVPlayer({
 
       {/* Loading & Error States */}
       {channel && errorMsg && (
-        <div className="absolute inset-0 bg-[#020617]/90 flex flex-col items-center justify-center text-center p-6 z-10 backdrop-blur-md">
+        <div className="absolute inset-0 bg-[#020617] flex flex-col items-center justify-center text-center p-6 z-10">
           <RotateCcw className="w-12 h-12 text-rose-500 mb-4 animate-spin-slow" />
           <p className="text-rose-400 font-bold text-lg dir-rtl">{errorMsg}</p>
           <button
@@ -400,7 +428,7 @@ export default function IPTVPlayer({
 
       {/* TV Screen Dim Indicator / Screensaver Warning */}
       {sleepCountdown !== null && (
-        <div className="absolute top-4 right-4 z-20 flex items-center space-x-2 space-x-reverse bg-blue-950/45 backdrop-blur-md px-3 py-1.5 rounded-full text-xs text-blue-400 font-mono border border-blue-500/30">
+        <div className="absolute top-4 right-4 z-20 flex items-center space-x-2 space-x-reverse bg-[#0a1e3f] px-3 py-1.5 rounded-full text-xs text-blue-400 font-mono border border-blue-500/20">
           <Timer className="w-3.5 h-3.5 animate-pulse" />
           <span>Sleep in: {formatCountdown(sleepCountdown)}</span>
         </div>
@@ -408,7 +436,7 @@ export default function IPTVPlayer({
 
       {/* Channel metadata HUD overlay - upper-left side */}
       {channel && showControls && (
-        <div className="absolute top-6 left-6 z-20 pointer-events-none transition-all duration-300 animate-fade-in flex items-center space-x-4 space-x-reverse bg-white/5 border border-white/10 p-4 rounded-xl backdrop-blur-md">
+        <div className="absolute top-6 left-6 z-20 pointer-events-none transition-all duration-300 animate-fade-in flex items-center space-x-4 space-x-reverse bg-[#111827] border border-white/10 p-4 rounded-xl">
           {channel.logoUrl ? (
             <img
               src={channel.logoUrl}
@@ -453,7 +481,7 @@ export default function IPTVPlayer({
 
       {/* Floating Aspect and Navigation Channels Hotbars */}
       {channel && showControls && (
-        <div className="absolute right-6 top-1/2 -translate-y-1/2 z-20 flex flex-col space-y-3 bg-white/5 border border-white/10 backdrop-blur-md p-2 rounded-xl">
+        <div className="absolute right-6 top-1/2 -translate-y-1/2 z-20 flex flex-col space-y-3 bg-[#111827] border border-white/10 p-2 rounded-xl">
           <button
             onMouseEnter={(e) => e.currentTarget.focus()}
             onClick={onPrevChannel}
@@ -475,7 +503,7 @@ export default function IPTVPlayer({
 
       {/* Primary Video Custom Control HUD Panel */}
       {channel && showControls && (
-        <div className="absolute bottom-0 left-0 right-0 h-24 bg-slate-950/80 backdrop-blur-xl border-t border-white/5 z-20 px-6 flex items-center justify-between transition-all duration-300 select-none">
+        <div className="absolute bottom-0 left-0 right-0 h-24 bg-[#090d16] border-t border-white/15 z-20 px-6 flex items-center justify-between transition-all duration-300 select-none">
           {/* Play/Pause & Skipping Buttons */}
           <div className="flex items-center space-x-3 space-x-reverse">
             <button
@@ -556,7 +584,7 @@ export default function IPTVPlayer({
                 </button>
 
                 {showQualityMenu && (
-                  <div className="absolute bottom-12 right-0 bg-slate-950/90 backdrop-blur-2xl border border-white/10 rounded-xl overflow-hidden shadow-2xl w-36 py-1 z-30">
+                  <div className="absolute bottom-12 right-0 bg-slate-900 border border-white/10 rounded-xl overflow-hidden w-36 py-1 z-30">
                     <button
                       onMouseEnter={(e) => e.currentTarget.focus()}
                       onClick={() => changeQuality(-1)}
@@ -594,7 +622,7 @@ export default function IPTVPlayer({
               </button>
 
               {showSleepMenu && (
-                <div className="absolute bottom-12 right-0 bg-slate-950/95 border border-white/10 rounded-xl overflow-hidden shadow-2xl w-36 py-1 z-30 dir-rtl">
+                <div className="absolute bottom-12 right-0 bg-slate-900 border border-white/10 rounded-xl overflow-hidden w-36 py-1 z-30 dir-rtl">
                   <button
                     onMouseEnter={(e) => e.currentTarget.focus()}
                     onClick={() => selectSleepTimer(null)}

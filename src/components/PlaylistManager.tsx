@@ -165,7 +165,7 @@ export default function PlaylistManager({
 
   return (
     <div 
-      className="glass-panel shadow-2xl rounded-2xl p-4 md:p-6 relative overflow-hidden"
+      className="bg-slate-900/30 border border-white/5 rounded-2xl p-4 relative overflow-hidden"
       onFocus={() => onFocusChange?.('playlist_importer')}
     >
       <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 mb-5 dir-rtl">

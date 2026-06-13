@@ -1,15 +1,17 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { 
   Tv, Heart, Info, HelpCircle, RefreshCw, Moon, Fullscreen,
-  Sliders, ArrowUp, ArrowDown, ArrowLeft, ArrowRight, CornerDownLeft, Plus
+  Sliders, ArrowUp, ArrowDown, ArrowLeft, ArrowRight, CornerDownLeft, Plus,
+  Menu, X, Shield, BookOpen, Settings, AlertTriangle
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
-import { Channel, PlayerSettings, FocusArea } from './types';
+import { Channel, PlayerSettings, ProxySettings, FocusArea } from './types';
 import { PRESET_CHANNELS } from './components/PresetChannels';
 import IPTVPlayer from './components/IPTVPlayer';
 import ChannelList from './components/ChannelList';
 import PlaylistManager from './components/PlaylistManager';
+import ProxySettingsPanel from './components/ProxySettingsPanel';
 import OLEDActiveSleep from './components/OLEDActiveSleep';
 
 export default function App() {
@@ -41,7 +43,7 @@ export default function App() {
         return PRESET_CHANNELS[0];
       }
     }
-    return PRESET_CHANNELS[0]; // Start with the first NASA stream as demo
+    return PRESET_CHANNELS[0];
   });
 
   // Player settings & preferences
@@ -53,8 +55,34 @@ export default function App() {
     showOledScreensaver: false,
   });
 
+  // Advanced headers proxy and token rotation settings
+  const [proxySettings, setProxySettings] = useState<ProxySettings>(() => {
+    const saved = localStorage.getItem('iptv_proxy_settings');
+    if (saved) {
+      try {
+        return JSON.parse(saved);
+      } catch {
+        // use default
+      }
+    }
+    return {
+      enabled: false,
+      sessionId: 'session_' + Math.random().toString(36).substring(2, 11),
+      cookie: '',
+      referer: '',
+      userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+      token: '',
+      tokenParam: 'token',
+      tokenRenewUrl: '',
+      tokenRenewInterval: 45,
+      tokenRenewEnabled: false,
+      tokenRenewKey: '',
+    };
+  });
+
   const [activeFocusArea, setActiveFocusArea] = useState<FocusArea>('channel_list');
-  const [showHelpModal, setShowHelpModal] = useState(false);
+  const [isSidebarOpen, setIsSidebarOpen] = useState(true);
+  const [sidebarTab, setSidebarTab] = useState<'channels' | 'import' | 'proxy' | 'shortcuts'>('channels');
   const lastActivityRef = useRef<number>(Date.now());
 
   // Save favorites to storage
@@ -64,7 +92,7 @@ export default function App() {
 
   // Save custom playlists to storage
   useEffect(() => {
-    localStorage.setItem('iptv_custom_snapshots', JSON.stringify(customPlaylists));
+    localStorage.setItem('iptv_custom_playlists', JSON.stringify(customPlaylists));
   }, [customPlaylists]);
 
   // Save last selected channel
@@ -73,6 +101,106 @@ export default function App() {
       localStorage.setItem('iptv_last_channel', JSON.stringify(selectedChannel));
     }
   }, [selectedChannel]);
+
+  // Save proxy settings & post live token updates to our Express proxy server session store
+  useEffect(() => {
+    localStorage.setItem('iptv_proxy_settings', JSON.stringify(proxySettings));
+    
+    if (proxySettings.sessionId) {
+      fetch('/api/session/token', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          sessionId: proxySettings.sessionId,
+          token: proxySettings.token
+        })
+      }).catch(err => console.warn('Failed background token synchronisation:', err));
+    }
+  }, [proxySettings]);
+
+  // Background Token Renewal Loop (every 30-60s)
+  useEffect(() => {
+    if (!proxySettings.tokenRenewEnabled || !proxySettings.tokenRenewUrl) {
+      return;
+    }
+
+    const renewToken = async () => {
+      try {
+        // Fetch via our local Express CORS bypass token proxy
+        let tokenApiUrl = `/api/fetch-token?url=${encodeURIComponent(proxySettings.tokenRenewUrl)}`;
+        if (proxySettings.cookie) tokenApiUrl += `&cookie=${encodeURIComponent(proxySettings.cookie)}`;
+        if (proxySettings.referer) tokenApiUrl += `&referer=${encodeURIComponent(proxySettings.referer)}`;
+        if (proxySettings.userAgent) tokenApiUrl += `&userAgent=${encodeURIComponent(proxySettings.userAgent)}`;
+
+        const response = await fetch(tokenApiUrl);
+        if (!response.ok) {
+          throw new Error('Token API HTTP ' + response.status);
+        }
+        
+        const text = await response.text();
+        let freshToken = text.trim();
+
+        // Extract using custom JSON key path if configured
+        if (proxySettings.tokenRenewKey) {
+          try {
+            const parsed = JSON.parse(text);
+            const pathParts = proxySettings.tokenRenewKey.split('.');
+            let value: any = parsed;
+            for (const part of pathParts) {
+              if (value && value[part] !== undefined) {
+                value = value[part];
+              } else {
+                value = null;
+                break;
+              }
+            }
+            if (value) {
+              freshToken = String(value).trim();
+            }
+          } catch (e) {
+            console.warn('JSON parsing of stream token failed, adopting raw string:', e);
+          }
+        }
+
+        if (freshToken && freshToken !== proxySettings.token) {
+          setProxySettings(prev => ({
+            ...prev,
+            token: freshToken
+          }));
+
+          // Trigger screen Toast notification
+          const toast = document.getElementById('token-toast-alert');
+          if (toast) {
+            toast.classList.remove('opacity-0', 'translate-y-2');
+            toast.classList.add('opacity-100', 'translate-y-0');
+            setTimeout(() => {
+              toast.classList.remove('opacity-100', 'translate-y-0');
+              toast.classList.add('opacity-0', 'translate-y-2');
+            }, 3000);
+          }
+        }
+      } catch (err) {
+        console.error('Error renewing token automatic tick:', err);
+      }
+    };
+
+    // Execute first run
+    renewToken();
+
+    // Loop interval
+    const secs = Math.max(15, proxySettings.tokenRenewInterval);
+    const id = setInterval(renewToken, secs * 1000);
+
+    return () => clearInterval(id);
+  }, [
+    proxySettings.tokenRenewEnabled,
+    proxySettings.tokenRenewUrl,
+    proxySettings.tokenRenewInterval,
+    proxySettings.tokenRenewKey,
+    proxySettings.cookie,
+    proxySettings.referer,
+    proxySettings.userAgent
+  ]);
 
   // Monitor idle time for OLED screensaver safety (10 minutes)
   useEffect(() => {
@@ -84,10 +212,8 @@ export default function App() {
     window.addEventListener('mousemove', updateActivity);
     window.addEventListener('mousedown', updateActivity);
 
-    // Dynamic 10-min interval check
     const interval = setInterval(() => {
       const now = Date.now();
-      // If inactive for 10 minutes (600,000ms), and player is paused or not fullscreen, launch screensaver
       if (now - lastActivityRef.current > 600000 && !settings.showOledScreensaver) {
         setSettings((prev) => ({ ...prev, showOledScreensaver: true }));
       }
@@ -110,10 +236,10 @@ export default function App() {
       return updated;
     });
 
-    // Auto-play the first channel of newly uploaded M3U list
     if (channels.length > 0) {
       setSelectedChannel(channels[0]);
     }
+    setSidebarTab('channels'); // Switch to channel viewer tab instantly!
   };
 
   // Clear all custom lists
@@ -164,12 +290,15 @@ export default function App() {
   };
 
   return (
-    <div className="min-h-screen w-full bg-[#020617] text-slate-100 flex flex-col font-sans transition-all duration-500 overflow-x-hidden p-3 md:p-6 select-none relative pb-16">
+    <div className="h-screen w-screen overflow-hidden bg-black text-slate-100 font-sans select-none relative flex flex-row">
       
-      {/* Background Mesh Gradient */}
-      <div className="absolute inset-0 z-0 overflow-hidden pointer-events-none">
-        <div className="absolute top-[-10%] left-[-10%] w-[50%] h-[50%] rounded-full bg-blue-900/30 blur-[120px]"></div>
-        <div className="absolute bottom-[-10%] right-[-10%] w-[50%] h-[50%] rounded-full bg-purple-900/20 blur-[120px]"></div>
+      {/* Dynamic Token Refreshed Toast Notification */}
+      <div 
+        id="token-toast-alert" 
+        className="absolute bottom-6 right-6 z-[9999] bg-slate-900 border border-emerald-510 px-4 py-3 rounded-xl shadow-2xl flex items-center gap-2 text-emerald-450 pointer-events-none opacity-0 translate-y-2 transition-all duration-300 font-sans"
+      >
+        <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-ping" />
+        <span className="text-xs font-bold leading-none dir-rtl">توکن زنده استریم بروزرسانی شد!</span>
       </div>
 
       {/* OLED screensaver module */}
@@ -182,219 +311,239 @@ export default function App() {
         />
       )}
 
-      {/* Header Grid */}
-      <header className="relative z-10 w-full flex-shrink-0 flex flex-col sm:flex-row items-center justify-between gap-4 border-b border-white/10 pb-4 mb-6 dir-rtl">
-        <div className="flex items-center space-x-3 space-x-reverse text-right">
-          <div className="w-11 h-11 rounded-xl bg-blue-600 flex items-center justify-center text-white shadow-lg shadow-blue-500/20 hover:scale-105 transition duration-300">
-            <Tv className="w-6 h-6" />
-          </div>
-          <div>
-            <h1 className="text-xl font-bold font-sans leading-none text-white tracking-wide">
-              تلویزیون هوشمند <span className="text-blue-400 font-black">من</span>
-            </h1>
-            <p className="text-[10px] text-slate-400 font-semibold tracking-wider mt-1">
-              IPTV STREAM PLAYER • PREMIUM GLASS PWA
-            </p>
-          </div>
-        </div>
+      {/* Floating Left Sidebar Toggle Button - Renders if Sidebar is closed */}
+      {!isSidebarOpen && (
+        <button
+          onClick={() => setIsSidebarOpen(true)}
+          className="absolute top-4 left-4 z-30 p-3 bg-slate-900 hover:bg-slate-800 border border-white/10 rounded-xl text-slate-350 cursor-pointer focus:border-blue-500 hover:text-white transition shadow-lg outline-none flex items-center justify-center"
+          title="باز کردن منوی تلویزیون"
+        >
+          <Menu className="w-5 h-5" />
+        </button>
+      )}
 
-        {/* TV specific details: Clock, status, etc. */}
-        <div className="flex items-center gap-4 text-xs font-semibold select-none text-slate-400">
-          <div className="hidden sm:flex flex-col items-end text-right border-l border-white/10 pl-4">
-            <span className="text-white text-sm font-mono tracking-wider">{currentLocalTime()}</span>
-            <span className="text-[10px] text-slate-400 mt-0.5">{currentLocalDate()}</span>
-          </div>
-
-          <div className="flex items-center gap-2">
-            <button
-              onMouseEnter={(e) => e.currentTarget.focus()}
-              onClick={() => setShowHelpModal(true)}
-              className="p-2 bg-white/5 hover:bg-white/10 hover:border-blue-400/50 focus:border-blue-500 focus:text-blue-400 text-slate-300 border border-white/10 rounded-xl transition duration-150 cursor-pointer outline-none focus:ring-2 focus:ring-blue-500/20"
-              title="آموزش راهنمای کنترل تلویزیون"
-            >
-              <HelpCircle className="w-4 h-4" />
-            </button>
-            <button
-              onMouseEnter={(e) => e.currentTarget.focus()}
-              onClick={() => setSettings(prev => ({ ...prev, showOledScreensaver: true }))}
-              className="p-2 bg-white/5 hover:bg-white/10 hover:border-blue-400/50 focus:border-blue-500 focus:text-blue-400 text-slate-300 border border-white/10 rounded-xl transition duration-150 cursor-pointer outline-none focus:ring-2 focus:ring-blue-500/20 flex items-center gap-1.5"
-              title="فعال‌سازی محافظ صفحه"
-            >
-              <Moon className="w-4 h-4" />
-              <span className="text-[10px] hidden md:inline font-bold">محافظ صفحه</span>
-            </button>
-          </div>
-        </div>
-      </header>
-
-      {/* Main Grid Content - TV layout structure */}
-      <main className="relative z-10 flex-1 w-full grid grid-cols-1 lg:grid-cols-12 gap-6 items-stretch min-h-0">
-        
-        {/* Right side: Channels list sidebar (Larger on desktop TV browsers) */}
-        <div className="col-span-1 lg:col-span-4 flex flex-col h-full order-last lg:order-none">
-          <ChannelList
-            channels={allChannels}
-            selectedChannel={selectedChannel}
-            onSelectChannel={(chan) => {
-              setSelectedChannel(chan);
-              // Programmatically click player focus to allow immediate remote play state
-              document.getElementById('main-video-player-container')?.focus();
-            }}
-            favorites={favorites}
-            onToggleFavorite={handleToggleFavorite}
-            onFocusChange={(area) => setActiveFocusArea(area as FocusArea)}
-          />
-        </div>
-
-        {/* Left side: Premium HTML5 / HLS streamer screen */}
-        <div className="col-span-1 lg:col-span-8 flex flex-col space-y-6 h-full">
-          <div className="relative aspect-video">
-            <IPTVPlayer
-              channel={selectedChannel}
-              settings={settings}
-              setSettings={setSettings}
-              onPrevChannel={handlePrevChannel}
-              onNextChannel={handleNextChannel}
-              onFocusChange={(area) => setActiveFocusArea(area as FocusArea)}
-            />
-          </div>
-
-          {/* Inline instruction widget */}
-          <div className="bg-white/5 backdrop-blur-md p-4 border border-white/10 rounded-2xl flex items-center justify-between gap-4 text-xs dir-rtl text-right">
-            <div className="flex gap-2.5 items-start">
-              <CornerDownLeft className="text-blue-400 w-5 h-5 shrink-0 mt-0.5" />
-              <div>
-                <h4 className="font-bold text-white text-sm">راهنمای هوشمند تعویض کانال</h4>
-                <p className="text-slate-300 text-[11px] mt-0.5 leading-relaxed">
-                  میتوانید با تکان دادن نشانگر کنترل روی صفحه، روی گزینه‌ها بروید یا با کلیدهای جهتی به شبکه‌ها رانده شوید. دکمه‌های جهت چپ و راست مستقیماً شبکه‌ها را تغییر می‌دهند.
-                </p>
-              </div>
-            </div>
-          </div>
-        </div>
-      </main>
-
-      {/* Full panel at the bottom: Add & Import custom streams */}
-      <section className="relative z-10 w-full mt-6 flex-shrink-0">
-        <PlaylistManager
-          onImportPlaylist={handleImportPlaylist}
-          onClearPlaylists={handleClearPlaylists}
-          hasCustomPlaylists={customPlaylists.length > 0}
-          onSelectDirectStream={(customChan) => {
-            setSelectedChannel(customChan);
-            document.getElementById('main-video-player-container')?.focus();
-          }}
-          onFocusChange={(area) => setActiveFocusArea(area as FocusArea)}
-        />
-      </section>
-
-      {/* Floating help navigation layout instruction (Modal) */}
+      {/* LEFT SIDEBAR: Solid, lightweight to bypass Smart TV latency */}
       <AnimatePresence>
-        {showHelpModal && (
+        {isSidebarOpen && (
           <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 z-[10000] bg-black/85 backdrop-blur-md flex items-center justify-center p-4 dir-rtl text-right select-none"
+            initial={{ x: -400 }}
+            animate={{ x: 0 }}
+            exit={{ x: -400 }}
+            transition={{ type: 'tween', duration: 0.2 }}
+            className="w-96 min-w-[384px] h-full bg-slate-950 border-r border-white/10 flex flex-col z-40 relative relative grid grid-rows-[auto_1fr_auto]"
           >
-            <motion.div
-              initial={{ scale: 0.95, y: 15 }}
-              animate={{ scale: 1, y: 0 }}
-              exit={{ scale: 0.95, y: 15 }}
-              className="bg-slate-950/90 backdrop-blur-2xl border border-white/10 rounded-3xl p-6 md:p-8 max-w-xl w-full shadow-2xl relative"
-            >
-              <div className="flex items-center gap-3 border-b border-white/10 pb-4 mb-5">
-                <div className="w-10 h-10 rounded-lg bg-blue-600 flex items-center justify-center text-white">
-                  <Sliders className="w-5 h-5" />
+            {/* Sidebar Title Header banner */}
+            <div className="p-4 border-b border-white/10 flex items-center justify-between bg-slate-900/60 dir-rtl text-right">
+              <div className="flex items-center space-x-3 space-x-reverse">
+                <div className="w-9 h-9 rounded-lg bg-blue-600 flex items-center justify-center text-white shadow shadow-blue-500/20">
+                  <Tv className="w-5 h-5 animate-pulse" />
                 </div>
                 <div>
-                  <h3 className="font-black text-lg text-white">راهنمای میانبر و ناوبری تلویزیون سامسونگ</h3>
-                  <p className="text-[10px] text-slate-400 tracking-wider font-semibold">TIZEN TV CONTROL & REMOTE SHORTCUTS</p>
+                  <h1 className="text-sm font-bold leading-none text-white font-sans">
+                    تلویزیون هوشمند <span className="text-blue-400 font-extrabold">من</span>
+                  </h1>
+                  <span className="text-[9px] text-slate-400 font-semibold tracking-wider block mt-1">IPTV STREAM PLAYER</span>
                 </div>
               </div>
-
-              <div className="space-y-4 text-xs text-slate-300">
-                <div className="flex items-start gap-3">
-                  <div className="w-8 h-8 rounded-lg bg-white/5 border border-white/10 flex items-center justify-center shrink-0">
-                    <ArrowUp className="w-4 h-4 text-blue-400" />
-                  </div>
-                  <div>
-                    <h4 className="font-bold text-white text-sm">جهت‌های بالا و پایین دکمه‌های کنترل</h4>
-                    <p className="text-slate-400 mt-1">تغییر کانال در لیست و گشت‌وگذار سریع در گزینه‌ها. در حالت پخش زنده باعث تغییر داینامیک درصد صدا می‌شود.</p>
-                  </div>
-                </div>
-
-                <div className="flex items-start gap-3">
-                  <div className="w-8 h-8 rounded-lg bg-white/5 border border-white/10 flex items-center justify-center shrink-0">
-                    <ArrowLeft className="w-4 h-4 text-blue-400" />
-                  </div>
-                  <div>
-                    <h4 className="font-bold text-white text-sm">جهت‌های چپ و راست</h4>
-                    <p className="text-slate-400 mt-1">پرش مستقیم به شبکه قبلی یا شبکه بعدی در گرید لیست فعال شما.</p>
-                  </div>
-                </div>
-
-                <div className="flex items-start gap-3">
-                  <div className="w-8 h-8 flex items-center justify-center border border-white/15 rounded-lg bg-white/5 text-blue-400 px-2 font-mono font-bold shrink-0 text-[10px]">
-                    Enter
-                  </div>
-                  <div>
-                    <h4 className="font-bold text-white text-sm">کلید تایید / کلیک وسط کلید کنترل</h4>
-                    <p className="text-slate-400 mt-1">پخش استریم کانال انتخاب شده و همچنین نمایش منوی کنترل پنل پایینی.</p>
-                  </div>
-                </div>
-
-                <div className="flex items-start gap-3">
-                  <div className="w-8 h-8 flex items-center justify-center border border-white/15 rounded-lg bg-white/5 text-blue-400 px-1 font-mono font-bold shrink-0 text-[10px]">
-                    Space
-                  </div>
-                  <div>
-                    <h4 className="font-bold text-white text-sm">کلید فاصله / Spacebar</h4>
-                    <p className="text-slate-400 mt-1">توقف موقت (Pause) یا ادامه مجدد (Play) کانال تلویزیونی.</p>
-                  </div>
-                </div>
-
-                <div className="flex items-start gap-3">
-                  <div className="w-8 h-8 flex items-center justify-center border border-white/15 rounded-lg bg-white/5 text-blue-400 px-1 font-mono font-bold shrink-0 text-[10px]">
-                    Back
-                  </div>
-                  <div>
-                    <h4 className="font-bold text-white text-sm">دکمه بازگشت / Backspace تلویزیون</h4>
-                    <p className="text-slate-400 mt-1">خروج از حالت تمام صفحه یا بستن منوهای تاشوی کیفیت تصویر.</p>
-                  </div>
-                </div>
-              </div>
-
               <button
-                onMouseEnter={(e) => e.currentTarget.focus()}
-                onClick={() => setShowHelpModal(false)}
-                className="mt-6 w-full h-11 bg-white/5 hover:bg-white/10 hover:text-white text-center rounded-xl border border-white/10 font-extrabold text-sm text-slate-300 transition duration-150 cursor-pointer focus:border-blue-500 outline-none"
+                onClick={() => setIsSidebarOpen(false)}
+                className="p-1.5 bg-white/5 hover:bg-white/10 border border-white/5 rounded-lg text-slate-400 hover:text-white cursor-pointer focus:border-blue-500 transition outline-none"
+                title="بستن منو"
               >
-                متوجه شدم (بستن)
+                <X className="w-4 h-4" />
               </button>
-            </motion.div>
+            </div>
+
+            {/* Sidebar Tabs selections */}
+            <div className="flex border-b border-white/5 bg-slate-900/20 py-1.5 px-2 gap-1 dir-rtl">
+              <button
+                onClick={() => setSidebarTab('channels')}
+                className={`flex-1 py-1 px-2.5 text-xs font-bold rounded-md transition-all flex flex-col items-center gap-1 cursor-pointer ${sidebarTab === 'channels' ? 'bg-blue-600 text-white shadow' : 'text-slate-400 hover:text-white hover:bg-white/5'}`}
+              >
+                <Tv className="w-4 h-4" />
+                <span>برنامه‌ها</span>
+              </button>
+              <button
+                onClick={() => setSidebarTab('import')}
+                className={`flex-1 py-1 px-2.5 text-xs font-bold rounded-md transition-all flex flex-col items-center gap-1 cursor-pointer ${sidebarTab === 'import' ? 'bg-blue-600 text-white shadow' : 'text-slate-400 hover:text-white hover:bg-white/5'}`}
+              >
+                <BookOpen className="w-4 h-4" />
+                <span>بارگذاری</span>
+              </button>
+              <button
+                onClick={() => setSidebarTab('proxy')}
+                className={`flex-1 py-1 px-2.5 text-xs font-bold rounded-md transition-all flex flex-col items-center gap-1 cursor-pointer ${sidebarTab === 'proxy' ? 'bg-blue-600 text-white shadow' : 'text-slate-400 hover:text-white hover:bg-white/5'}`}
+              >
+                <Settings className="w-4 h-4" />
+                <span>پروکسی</span>
+              </button>
+              <button
+                onClick={() => setSidebarTab('shortcuts')}
+                className={`flex-1 py-1 px-2.5 text-xs font-bold rounded-md transition-all flex flex-col items-center gap-1 cursor-pointer ${sidebarTab === 'shortcuts' ? 'bg-blue-600 text-white shadow' : 'text-slate-400 hover:text-white hover:bg-white/5'}`}
+              >
+                <HelpCircle className="w-4 h-4" />
+                <span>راهنما</span>
+              </button>
+            </div>
+
+            {/* TAB PANELS CONTAINER */}
+            <div className="flex-1 overflow-y-auto p-4 flex flex-col scrollbar-thin">
+              {sidebarTab === 'channels' && (
+                <div className="flex-1 min-h-0">
+                  <ChannelList
+                    channels={allChannels}
+                    selectedChannel={selectedChannel}
+                    onSelectChannel={(chan) => {
+                      setSelectedChannel(chan);
+                      // Close sidebar automatically on mobile/TV to display full-width video
+                      if (window.innerWidth < 768) {
+                        setIsSidebarOpen(false);
+                      }
+                      document.getElementById('main-video-player-container')?.focus();
+                    }}
+                    favorites={favorites}
+                    onToggleFavorite={handleToggleFavorite}
+                    onFocusChange={(area) => setActiveFocusArea(area as FocusArea)}
+                  />
+                </div>
+              )}
+
+              {sidebarTab === 'import' && (
+                <div className="flex flex-col min-h-0 space-y-4">
+                  <PlaylistManager
+                    onImportPlaylist={handleImportPlaylist}
+                    onClearPlaylists={handleClearPlaylists}
+                    hasCustomPlaylists={customPlaylists.length > 0}
+                    onSelectDirectStream={(customChan) => {
+                      setSelectedChannel(customChan);
+                      if (window.innerWidth < 768) {
+                        setIsSidebarOpen(false);
+                      }
+                      document.getElementById('main-video-player-container')?.focus();
+                    }}
+                    onFocusChange={(area) => setActiveFocusArea(area as FocusArea)}
+                  />
+                </div>
+              )}
+
+              {sidebarTab === 'proxy' && (
+                <div className="flex-1 min-h-0">
+                  <ProxySettingsPanel
+                    settings={proxySettings}
+                    onSave={(newSettings) => setProxySettings(newSettings)}
+                    onFocusChange={(area) => setActiveFocusArea(area as FocusArea)}
+                  />
+                </div>
+              )}
+
+              {sidebarTab === 'shortcuts' && (
+                <div className="space-y-4 text-xs text-slate-350 select-none text-right dir-rtl">
+                  <div className="flex items-center gap-2 border-b border-white/5 pb-2">
+                    <Sliders className="w-4 h-4 text-blue-400" />
+                    <span className="font-bold text-white text-sm">راهنمای میانبرهای کنترل هوشمند</span>
+                  </div>
+                  
+                  <div className="space-y-3 mt-2 pr-1">
+                    <div className="bg-slate-900/50 p-2.5 rounded-lg border border-white/5">
+                      <div className="font-bold text-white flex items-center justify-between mb-1">
+                        <span>تعویض کانال زنده</span>
+                        <span className="px-1.5 py-0.5 bg-black text-[9px] border border-white/5 text-blue-400 font-mono rounded">← / →</span>
+                      </div>
+                      <p className="text-[10px] text-slate-400 leading-relaxed">با فشار کلیدهای جهت چپ و راست مستقیماً به کانال قبلی یا بعدی بروید.</p>
+                    </div>
+
+                    <div className="bg-slate-900/50 p-2.5 rounded-lg border border-white/5">
+                      <div className="font-bold text-white flex items-center justify-between mb-1">
+                        <span>تغییر بلندی صدا</span>
+                        <span className="px-1.5 py-0.5 bg-black text-[9px] border border-white/5 text-blue-400 font-mono rounded">↑ / ↓</span>
+                      </div>
+                      <p className="text-[10px] text-slate-400 leading-relaxed">زمانی که کنترل فاقد منوی فعال است، جهت بالا و پایین درصد صدای خروجی را تغییر می‌دهند.</p>
+                    </div>
+
+                    <div className="bg-slate-900/50 p-2.5 rounded-lg border border-white/5">
+                      <div className="font-bold text-white flex items-center justify-between mb-1">
+                        <span>توقف / پخش</span>
+                        <span className="px-1.5 py-0.5 bg-black text-[9px] border border-white/5 text-blue-400 font-mono rounded">Space</span>
+                      </div>
+                      <p className="text-[10px] text-slate-400 leading-relaxed">فشردن دکمه فاصله استریم در حال پخش را متوقف یا به جریان می‌اندازد.</p>
+                    </div>
+
+                    <div className="bg-slate-900/50 p-2.5 rounded-lg border border-white/5">
+                      <div className="font-bold text-white flex items-center justify-between mb-1">
+                        <span>تمام صفحه</span>
+                        <span className="px-1.5 py-0.5 bg-black text-[9px] border border-white/5 text-blue-400 font-mono rounded">F</span>
+                      </div>
+                      <p className="text-[10px] text-slate-400 leading-relaxed">تغییر فوری وضعیت پخش تصویر به تمام صفحه تلویزیون.</p>
+                    </div>
+
+                    <div className="bg-slate-900/50 p-2.5 rounded-lg border border-white/5">
+                      <div className="font-bold text-white flex items-center justify-between mb-1">
+                        <span>دکمه بازگشت تلویزیون</span>
+                        <span className="px-1.5 py-0.5 bg-black text-[9px] border border-white/5 text-blue-400 font-mono rounded">Backspace</span>
+                      </div>
+                      <p className="text-[10px] text-slate-400 leading-relaxed">خروج از حالت تمام صفحه یا بستن سایر کادرهای متحرک.</p>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Sidebar bottom persistent stats / clock block */}
+            <div className="p-3 border-t border-white/5 bg-slate-950 flex items-center justify-between text-slate-500 text-[10px] dir-rtl font-semibold">
+              <div className="flex items-center gap-1.5">
+                <span className="w-1.5 h-1.5 rounded-full bg-blue-500 animate-pulse" />
+                <span className="text-slate-400">{currentLocalTime()}</span>
+              </div>
+              <span className="text-slate-500">{currentLocalDate()}</span>
+              <button
+                onClick={() => setSettings(prev => ({ ...prev, showOledScreensaver: true }))}
+                className="flex items-center gap-1 text-slate-400 hover:text-white cursor-pointer bg-white/5 px-2 py-1 rounded"
+              >
+                <Moon className="w-3 h-3 text-blue-400" />
+                <span>محافظ صفحه</span>
+              </button>
+            </div>
           </motion.div>
         )}
       </AnimatePresence>
 
-      {/* Global CSS fixes included in page */}
+      {/* RIGHT MAIN GAME STAGE: IPTVPlayer takes 100% of the remaining viewport space */}
+      <div 
+        className="flex-1 h-full relative bg-black flex flex-col"
+        onClick={() => {
+          // If sidebar is open and on mobile resolutions, clicking the player can dismiss the sidebar
+          if (isSidebarOpen && window.innerWidth < 1024) {
+            setIsSidebarOpen(false);
+          }
+        }}
+      >
+        <IPTVPlayer
+          channel={selectedChannel}
+          settings={settings}
+          setSettings={setSettings}
+          proxySettings={proxySettings}
+          onPrevChannel={handlePrevChannel}
+          onNextChannel={handleNextChannel}
+          onFocusChange={(area) => setActiveFocusArea(area as FocusArea)}
+        />
+      </div>
+
+      {/* Global CSS adjustments */}
       <style>{`
-        /* Custom nice scrollbar styling across sidebar and grids */
+        /* Fine tune scrollbar layouts for better remote navigation */
         .scrollbar-thin::-webkit-scrollbar {
-          width: 5px;
-          height: 5px;
+          width: 4px;
         }
         .scrollbar-thin::-webkit-scrollbar-track {
-          background: rgba(0, 0, 0, 0.2);
+          background: rgba(0,0,0,0.1);
         }
         .scrollbar-thin::-webkit-scrollbar-thumb {
-          background: #3f3f46;
+          background: #1e293b;
           border-radius: 99px;
         }
         .scrollbar-thin::-webkit-scrollbar-thumb:hover {
-          background: #fbbf24;
+          background: #475569;
         }
-        
         .dir-rtl {
           direction: rtl;
         }

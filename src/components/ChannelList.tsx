@@ -52,7 +52,7 @@ export default function ChannelList({
 
   return (
     <div 
-      className="flex flex-col h-full glass-panel shadow-2xl rounded-2xl p-4 md:p-5 select-none relative overflow-hidden"
+      className="flex flex-col h-full bg-slate-900/30 border border-white/5 rounded-2xl p-4 md:p-5 select-none relative overflow-hidden"
       onFocus={() => onFocusChange?.('channel_list')}
     >
       {/* List Header */}
