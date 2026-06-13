@@ -145,19 +145,23 @@ export default function IPTVPlayer({
     const video = videoRef.current;
     
     let streamUrl = channel.url;
-    const isTelewebionOrDomestic = 
-      channel.url.toLowerCase().includes("telewebion") ||
-      channel.url.toLowerCase().includes("shasans") ||
-      channel.url.toLowerCase().includes("irib") ||
-      channel.url.toLowerCase().includes("sepehr") ||
-      channel.url.toLowerCase().includes("live.ir") ||
-      channel.url.toLowerCase().includes("hls.ir") ||
-      channel.url.toLowerCase().includes("arvan") ||
-      channel.url.toLowerCase().includes("sedaoseema");
-
+    
     if (proxySettings && proxySettings.enabled) {
       const qParams = new URLSearchParams();
       qParams.set("url", channel.url);
+      
+      const isTelewebionOrDomestic = 
+        channel.url.toLowerCase().includes("telewebion") ||
+        channel.url.toLowerCase().includes("shasans") ||
+        channel.url.toLowerCase().includes("irib") ||
+        channel.url.toLowerCase().includes("sepehr") ||
+        channel.url.toLowerCase().includes("live.ir") ||
+        channel.url.toLowerCase().includes("hls.ir") ||
+        channel.url.toLowerCase().includes("arvan") ||
+        channel.url.toLowerCase().includes("sedaoseema") ||
+        channel.url.toLowerCase().includes(".ir") ||
+        channel.url.toLowerCase().includes("telewebion.com");
+
       if (proxySettings.sessionId) qParams.set("sessionId", proxySettings.sessionId);
       if (proxySettings.cookie) qParams.set("cookie", proxySettings.cookie);
       if (proxySettings.referer) {
@@ -168,7 +172,10 @@ export default function IPTVPlayer({
       if (proxySettings.userAgent) qParams.set("userAgent", proxySettings.userAgent);
       if (proxySettings.token) qParams.set("token", proxySettings.token);
       if (proxySettings.tokenParam) qParams.set("tokenParam", proxySettings.tokenParam);
-      if (proxySettings.proxySegments) qParams.set("proxySegments", "true");
+      
+      if (proxySettings.proxySegments || isTelewebionOrDomestic) {
+        qParams.set("proxySegments", "true");
+      }
       streamUrl = `/api/proxy?${qParams.toString()}`;
     }
 

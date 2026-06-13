@@ -7,6 +7,7 @@ process.env.NODE_TLS_REJECT_UNAUTHORIZED = "0";
 
 // Global memory for active session tokens
 const sessionTokens = new Map<string, string>();
+const sessionCookies = new Map<string, string>();
 
 async function startServer() {
   const app = express();
@@ -106,10 +107,22 @@ async function startServer() {
         }
       }
 
+      let mergedCookie = cookie;
+      if (sessionId && sessionCookies.has(sessionId)) {
+        const storedCookies = sessionCookies.get(sessionId) || "";
+        if (storedCookies) {
+          if (mergedCookie) {
+            mergedCookie = `${mergedCookie}; ${storedCookies}`;
+          } else {
+            mergedCookie = storedCookies;
+          }
+        }
+      }
+
       const fetchHeaders: Record<string, string> = {
         "Accept": "*/*"
       };
-      if (cookie) fetchHeaders["Cookie"] = cookie;
+      if (mergedCookie) fetchHeaders["Cookie"] = mergedCookie;
       
       const isTelewebionOrDomestic = 
         finalUrl.includes("telewebion") ||
@@ -160,6 +173,48 @@ async function startServer() {
 
       const response = await fetch(finalUrl, { headers: fetchHeaders });
       
+      // Extract and save Set-Cookie headers targeting the active session
+      if (sessionId) {
+        let setCookies: string[] = [];
+        if (typeof (response.headers as any).getSetCookie === "function") {
+          setCookies = (response.headers as any).getSetCookie();
+        } else {
+          const rawSetCookie = response.headers.get("set-cookie");
+          if (rawSetCookie) {
+            setCookies = rawSetCookie.split(/,\s*(?=[a-zA-Z0-9_]+=)/);
+          }
+        }
+
+        if (setCookies && setCookies.length > 0) {
+          const cookieMap = new Map<string, string>();
+          const existingCookies = sessionCookies.get(sessionId) || "";
+          if (existingCookies) {
+            existingCookies.split(";").forEach(c => {
+              const parts = c.trim().split("=");
+              if (parts[0] && parts[1]) {
+                cookieMap.set(parts[0].trim(), parts[1].trim());
+              }
+            });
+          }
+
+          setCookies.forEach(cookieStr => {
+            const cleanPart = cookieStr.split(";")[0];
+            if (cleanPart) {
+              const parts = cleanPart.trim().split("=");
+              if (parts[0] && parts[1]) {
+                cookieMap.set(parts[0].trim(), parts[1].trim());
+              }
+            }
+          });
+
+          const serialized = Array.from(cookieMap.entries())
+            .map(([k, v]) => `${k}=${v}`)
+            .join("; ");
+          
+          sessionCookies.set(sessionId, serialized);
+        }
+      }
+      
       const contentType = (response.headers.get("content-type") || "").toLowerCase();
       const isM3U8 = 
         contentType.includes("mpegurl") || 
@@ -189,8 +244,10 @@ async function startServer() {
           // If proxySegments is FALSE (default): we bypass media segments (.ts, .mp4, .m4s, etc.)
           // so they are downloaded directly by the user's browser, maximizing speed with their local ISP.
           // If proxySegments is TRUE: even media segments are routed via our proxy (useful for extreme VPNs).
+          // We also FORCE proxySegments for domestic Iranian / Telewebion streams since they require cookie/IP spoofing.
           const isPlayListLine = absUrl.toLowerCase().includes(".m3u8") || !absUrl.toLowerCase().match(/\.(ts|mp4|m4s|aac|mp3|m4a|webvtt)(\?|$)/);
-          if (!isPlayListLine && !proxySegments) {
+          const segmentNeedsProxy = proxySegments || isPlayListLine || isTelewebionOrDomestic;
+          if (!segmentNeedsProxy) {
             return absUrl;
           }
 
@@ -203,7 +260,7 @@ async function startServer() {
           if (referer) qParams.set("referer", referer);
           if (userAgent) qParams.set("userAgent", userAgent);
           if (tokenParam) qParams.set("tokenParam", tokenParam);
-          if (proxySegments) qParams.set("proxySegments", "true");
+          if (proxySegments || isTelewebionOrDomestic) qParams.set("proxySegments", "true");
 
           return `/api/proxy?${qParams.toString()}`;
         }).join("\n");
