@@ -1,0 +1,8 @@
+{
+  "name": "Tizen IPTV Player PWA",
+  "description": "پخش‌کننده تلوزیونی استریم‌های IPTV و کانال‌های زنده بهینه‌سازی شده برای مرورگر تلویزیون سامسونگ",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
