@@ -23,7 +23,6 @@ export default function ProxySettingsPanel({
   const [tokenRenewUrl, setTokenRenewUrl] = useState(settings.tokenRenewUrl);
   const [tokenRenewInterval, setTokenRenewInterval] = useState(settings.tokenRenewInterval || 45);
   const [tokenRenewKey, setTokenRenewKey] = useState(settings.tokenRenewKey || '');
-  const [upstreamProxy, setUpstreamProxy] = useState(settings.upstreamProxy || '');
   
   const [showSavedMsg, setShowSavedMsg] = useState(false);
 
@@ -41,7 +40,6 @@ export default function ProxySettingsPanel({
       tokenRenewUrl: tokenRenewUrl.trim(),
       tokenRenewInterval: Number(tokenRenewInterval) || 45,
       tokenRenewKey: tokenRenewKey.trim(),
-      upstreamProxy: upstreamProxy.trim(),
     });
 
     setShowSavedMsg(true);
@@ -145,21 +143,6 @@ export default function ProxySettingsPanel({
                 onChange={(e) => setUserAgent(e.target.value)}
                 className="w-full h-8 px-2 bg-black/40 border border-white/10 text-xs text-slate-200 placeholder-slate-650 rounded-lg outline-none focus:border-blue-500 transition-all ltr"
               />
-            </div>
-
-            <div className="flex flex-col space-y-1 border-t border-white/5 pt-2 mt-2">
-              <label className="text-[10px] font-bold text-slate-300">پروکسی بالادستی ایرانی (Upstream Iranian Proxy)</label>
-              <input
-                onMouseEnter={(e) => e.currentTarget.focus()}
-                type="text"
-                placeholder="socks5://185.123.45.67:1080 یا http://185.123..."
-                value={upstreamProxy}
-                onChange={(e) => setUpstreamProxy(e.target.value)}
-                className="w-full h-8 px-2 bg-black/40 border border-white/10 text-xs text-blue-300 placeholder-slate-600 rounded-lg outline-none focus:border-blue-500 transition-all ltr font-mono"
-              />
-              <span className="text-[9px] text-slate-400 leading-relaxed">
-                اگر از فیلترشکن استفاده می‌کنید و شبکه‌های صداوسیما پخش نمی‌شوند، یک آدرس پروکسی فعال ایرانی (SOCKS5 یا HTTP) در این کادر قرار دهید تا سرور میانی داده‌ها را از بستر اینترنت ایران دریافت کند.
-              </span>
             </div>
           </div>
         )}

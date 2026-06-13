@@ -168,7 +168,6 @@ export default function IPTVPlayer({
       if (proxySettings.userAgent) qParams.set("userAgent", proxySettings.userAgent);
       if (proxySettings.token) qParams.set("token", proxySettings.token);
       if (proxySettings.tokenParam) qParams.set("tokenParam", proxySettings.tokenParam);
-      if (proxySettings.upstreamProxy) qParams.set("upstreamProxy", proxySettings.upstreamProxy);
       streamUrl = `/api/proxy?${qParams.toString()}`;
     }
 

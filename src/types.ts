@@ -35,7 +35,6 @@ export interface ProxySettings {
   tokenRenewInterval: number; // in seconds
   tokenRenewEnabled: boolean;
   tokenRenewKey: string; // JSON parse key, empty = plain text
-  upstreamProxy?: string; // e.g. http://185.123.4.5:8080 or socks5://...
 }
 
 export type FocusArea = 'sidebar_nav' | 'channel_list' | 'search_bar' | 'playlist_importer' | 'player_controls' | 'presets_list' | 'proxy_settings';

@@ -1,99 +1,9 @@
 import express from "express";
 import path from "path";
 import { createServer as createViteServer } from "vite";
-import https from "https";
-import http from "http";
-import { parse as parseUrl } from "url";
-import { HttpsProxyAgent } from "https-proxy-agent";
-import { SocksProxyAgent } from "socks-proxy-agent";
 
 // Allow self-signed and expired TLS certificates for local or domestic IPTV feeds
 process.env.NODE_TLS_REJECT_UNAUTHORIZED = "0";
-
-// Helper for proxy routing
-function proxiedFetch(
-  urlStr: string,
-  headers: Record<string, string>,
-  proxyUrlStr?: string
-): Promise<{
-  ok: boolean;
-  status: number;
-  url: string;
-  headers: { get: (key: string) => string };
-  text: () => Promise<string>;
-  buffer: () => Promise<Buffer>;
-  arrayBuffer: () => Promise<ArrayBuffer>;
-}> {
-  return new Promise((resolve, reject) => {
-    try {
-      const parsed = parseUrl(urlStr);
-      const isHttps = parsed.protocol === "https:";
-      const lib = isHttps ? https : http;
-
-      let agent: any = undefined;
-      if (proxyUrlStr) {
-        if (proxyUrlStr.startsWith("socks")) {
-          agent = new SocksProxyAgent(proxyUrlStr);
-        } else {
-          agent = new HttpsProxyAgent(proxyUrlStr);
-        }
-      }
-
-      const reqOptions: any = {
-        method: "GET",
-        headers: headers,
-        agent: agent,
-        rejectUnauthorized: false
-      };
-
-      const req = lib.request(urlStr, reqOptions, (res) => {
-        // Handle redirect
-        if (res.statusCode && res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
-          let redirectUrl = res.headers.location;
-          try {
-            redirectUrl = new URL(res.headers.location, urlStr).toString();
-          } catch (e) {}
-          return proxiedFetch(redirectUrl, headers, proxyUrlStr).then(resolve).catch(reject);
-        }
-
-        const chunks: Buffer[] = [];
-        res.on("data", (chunk) => chunks.push(chunk));
-        res.on("end", () => {
-          const fullBuffer = Buffer.concat(chunks);
-          resolve({
-            ok: (res.statusCode || 0) >= 200 && (res.statusCode || 0) < 300,
-            status: res.statusCode || 200,
-            url: urlStr,
-            headers: {
-              get: (key: string) => {
-                const val = res.headers[key.toLowerCase()];
-                return Array.isArray(val) ? val.join(", ") : (val || "");
-              }
-            },
-            text: async () => fullBuffer.toString("utf8"),
-            buffer: async () => fullBuffer,
-            arrayBuffer: async () => {
-              const ab = new ArrayBuffer(fullBuffer.length);
-              const view = new Uint8Array(ab);
-              for (let i = 0; i < fullBuffer.length; ++i) {
-                view[i] = fullBuffer[i];
-              }
-              return ab;
-            }
-          });
-        });
-      });
-
-      req.on("error", (err) => {
-        reject(err);
-      });
-
-      req.end();
-    } catch (e) {
-      reject(e);
-    }
-  });
-}
 
 // Global memory for active session tokens
 const sessionTokens = new Map<string, string>();
@@ -214,15 +124,7 @@ async function startServer() {
       }
       fetchHeaders["User-Agent"] = userAgent || "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
 
-      // Read upstream proxy if supplied
-      const upstreamProxy = req.query.upstreamProxy as string || "";
-
-      let response;
-      if (upstreamProxy) {
-        response = await proxiedFetch(finalUrl, fetchHeaders, upstreamProxy);
-      } else {
-        response = await fetch(finalUrl, { headers: fetchHeaders });
-      }
+      const response = await fetch(finalUrl, { headers: fetchHeaders });
       
       const contentType = (response.headers.get("content-type") || "").toLowerCase();
       const isM3U8 = 
@@ -250,7 +152,15 @@ async function startServer() {
             absUrl = trimmed;
           }
 
-          // Build proxy link
+          // Only proxy playlists or files requiring auth header bypass (e.g., .m3u8).
+          // Media segments (.ts, .mp4, .m4s, .aac, .mp3, etc.) are downloaded directly by the client browser.
+          // This keeps media traffic local on Iranian internet with high speed and zero proxy geoblocks!
+          const isPlayListLine = absUrl.toLowerCase().includes(".m3u8") || !absUrl.toLowerCase().match(/\.(ts|mp4|m4s|aac|mp3|m4a|webvtt)(\?|$)/);
+          if (!isPlayListLine) {
+            return absUrl;
+          }
+
+          // Build proxy link for sub-playlists or auth endpoints
           const qParams = new URLSearchParams();
           qParams.set("url", absUrl);
           if (sessionId) qParams.set("sessionId", sessionId);
@@ -259,7 +169,6 @@ async function startServer() {
           if (referer) qParams.set("referer", referer);
           if (userAgent) qParams.set("userAgent", userAgent);
           if (tokenParam) qParams.set("tokenParam", tokenParam);
-          if (upstreamProxy) qParams.set("upstreamProxy", upstreamProxy);
 
           return `/api/proxy?${qParams.toString()}`;
         }).join("\n");
