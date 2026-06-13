@@ -168,6 +168,7 @@ export default function IPTVPlayer({
       if (proxySettings.userAgent) qParams.set("userAgent", proxySettings.userAgent);
       if (proxySettings.token) qParams.set("token", proxySettings.token);
       if (proxySettings.tokenParam) qParams.set("tokenParam", proxySettings.tokenParam);
+      if (proxySettings.proxySegments) qParams.set("proxySegments", "true");
       streamUrl = `/api/proxy?${qParams.toString()}`;
     }
 
@@ -254,7 +255,7 @@ export default function IPTVPlayer({
         hlsRef.current = null;
       }
     };
-  }, [channel, proxySettings.enabled, proxySettings.cookie, proxySettings.referer, proxySettings.userAgent, proxySettings.token, proxySettings.tokenParam]);
+  }, [channel, proxySettings.enabled, proxySettings.cookie, proxySettings.referer, proxySettings.userAgent, proxySettings.token, proxySettings.tokenParam, proxySettings.proxySegments]);
 
   // Sleep timer interval tracking
   useEffect(() => {

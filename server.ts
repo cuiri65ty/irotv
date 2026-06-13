@@ -91,6 +91,7 @@ async function startServer() {
       const referer = req.query.referer as string || "";
       const userAgent = req.query.userAgent as string || "";
       const tokenParam = req.query.tokenParam as string || "token";
+      const proxySegments = req.query.proxySegments === "true";
 
       // Append token
       let finalUrl = targetUrl;
@@ -109,20 +110,53 @@ async function startServer() {
         "Accept": "*/*"
       };
       if (cookie) fetchHeaders["Cookie"] = cookie;
-      if (referer) {
-        fetchHeaders["Referer"] = referer;
-      } else if (
+      
+      const isTelewebionOrDomestic = 
         finalUrl.includes("telewebion") ||
         finalUrl.includes("shasans") ||
         finalUrl.includes("irib") ||
         finalUrl.includes("sepehr") ||
         finalUrl.includes("live.ir") ||
-        finalUrl.includes("hls.ir")
-      ) {
+        finalUrl.includes("hls.ir") ||
+        finalUrl.includes(".ir/") ||
+        finalUrl.includes("arvan") ||
+        finalUrl.includes("sedaoseema");
+
+      if (referer) {
+        fetchHeaders["Referer"] = referer;
+      } else if (isTelewebionOrDomestic) {
         fetchHeaders["Referer"] = "https://www.telewebion.com/";
         fetchHeaders["Origin"] = "https://www.telewebion.com";
       }
       fetchHeaders["User-Agent"] = userAgent || "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
+
+      // Bypassing Iranian geoblocks on foreign hosting (e.g., Cloud Run) using header IP spoofing pool
+      if (isTelewebionOrDomestic) {
+        const iranIps = [
+          "2.180.12.34",    // TCI / Telecommunication Company of Iran (Tehran)
+          "5.200.120.45",   // Irancell (Mobile & FTTH)
+          "185.123.44.12",  // Shatel (High-speed broad)
+          "46.224.1.2",     // Asiatech
+          "94.101.240.1",   // Pars Online
+          "176.101.54.32",  // Hamrah-e-Aval (Mobile LTE Network)
+          "185.208.174.15", // Respina
+          "31.56.0.4",      // Mobinnet (TD-LTE)
+          "89.199.1.5",     // Rightel
+          "79.175.128.1"    // Tebyan IDC
+        ];
+        // Rotate Iranian IP to mimic genuine local residential stream consumers
+        const spoofedIranIp = iranIps[Math.floor(Math.random() * iranIps.length)];
+        
+        fetchHeaders["X-Forwarded-For"] = spoofedIranIp;
+        fetchHeaders["X-Real-IP"] = spoofedIranIp;
+        fetchHeaders["Client-IP"] = spoofedIranIp;
+        fetchHeaders["X-Client-IP"] = spoofedIranIp;
+        fetchHeaders["True-Client-IP"] = spoofedIranIp;
+        fetchHeaders["CF-Connecting-IP"] = spoofedIranIp;
+        fetchHeaders["X-Originating-IP"] = spoofedIranIp;
+        fetchHeaders["X-Remote-IP"] = spoofedIranIp;
+        fetchHeaders["X-Remote-Addr"] = spoofedIranIp;
+      }
 
       const response = await fetch(finalUrl, { headers: fetchHeaders });
       
@@ -152,11 +186,11 @@ async function startServer() {
             absUrl = trimmed;
           }
 
-          // Only proxy playlists or files requiring auth header bypass (e.g., .m3u8).
-          // Media segments (.ts, .mp4, .m4s, .aac, .mp3, etc.) are downloaded directly by the client browser.
-          // This keeps media traffic local on Iranian internet with high speed and zero proxy geoblocks!
+          // If proxySegments is FALSE (default): we bypass media segments (.ts, .mp4, .m4s, etc.)
+          // so they are downloaded directly by the user's browser, maximizing speed with their local ISP.
+          // If proxySegments is TRUE: even media segments are routed via our proxy (useful for extreme VPNs).
           const isPlayListLine = absUrl.toLowerCase().includes(".m3u8") || !absUrl.toLowerCase().match(/\.(ts|mp4|m4s|aac|mp3|m4a|webvtt)(\?|$)/);
-          if (!isPlayListLine) {
+          if (!isPlayListLine && !proxySegments) {
             return absUrl;
           }
 
@@ -169,6 +203,7 @@ async function startServer() {
           if (referer) qParams.set("referer", referer);
           if (userAgent) qParams.set("userAgent", userAgent);
           if (tokenParam) qParams.set("tokenParam", tokenParam);
+          if (proxySegments) qParams.set("proxySegments", "true");
 
           return `/api/proxy?${qParams.toString()}`;
         }).join("\n");

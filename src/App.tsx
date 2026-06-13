@@ -77,6 +77,7 @@ export default function App() {
       tokenRenewInterval: 45,
       tokenRenewEnabled: false,
       tokenRenewKey: '',
+      proxySegments: false,
     };
   });
 
